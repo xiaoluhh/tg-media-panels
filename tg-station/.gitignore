@@ -52,3 +52,7 @@ _apply_and_start.ps1
 _launch_detached.ps1
 _count_proxies.py
 _fixtest.py
+
+# 凭据文件（GitHub token / SSH 备份口令）——绝不能提交
+_secrets/
+*.secret

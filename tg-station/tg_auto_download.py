@@ -25,6 +25,19 @@ from datetime import datetime, timedelta
 if sys.stdout is None:
     sys.stdout = open(os.devnull, "w")
 
+# 显式把标准输出/错误重设为 UTF-8。
+# 为什么必须显式：PyInstaller 打包出来的 exe 实测会**忽略** PYTHONUTF8 / PYTHONIOENCODING
+# （tg_station 已按 UTF-8 注入环境变量，--list-channels 仍然报
+#   "'gbk' codec can't encode character ..." 直接失败），
+# 于是遇到含 emoji 的频道标题就崩。Go 端是按 UTF-8 读 JSON 的，所以这里统一成 UTF-8。
+for _name in ("stdout", "stderr"):
+    _stream = getattr(sys, _name, None)
+    if _stream is not None and hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
 from telethon import TelegramClient, events
 from telethon.errors import SessionPasswordNeededError
 from telethon.tl.types import (
