@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -17,7 +16,7 @@ import (
 // registerAPIRoutes 挂载整合后新增的全部 API 路由。
 // 必须在 http.ListenAndServe 之前调用。
 func registerAPIRoutes() {
-	http.HandleFunc("/api/status", statusHandler)                       // 综合状态（监听器 + 媒体索引）
+	http.HandleFunc("/api/status", statusHandler)                      // 综合状态（监听器 + 媒体索引）
 	http.HandleFunc("/api/listen/start", listenStartHandler)           // 启动下载器
 	http.HandleFunc("/api/listen/stop", listenStopHandler)             // 停止下载器
 	http.HandleFunc("/api/listen/restart", listenRestartHandler)       // 重启下载器
@@ -297,19 +296,35 @@ func saveSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 配置可能影响下载器（api_id/api_hash/channels 等），运行中则自动重启以应用
+	// 配置可能影响下载器（api_id/api_hash/channels 等）。
+	// 保存前若下载器正在运行（含外部独立进程）：先真正停掉旧实例，再用新配置启动。
+	// 重启失败必须如实返回，不能只报「设置已保存」而隐瞒失败。
+	wasRunning := downloader.isRunning()
 	restarted := false
-	if downloader.isRunning() {
-		if err := downloader.Restart(); err == nil {
+	restartErr := ""
+	if wasRunning {
+		if err := downloader.Restart(); err != nil {
+			restartErr = err.Error()
+			log.Printf("[station] 保存设置后重启下载器失败: %v", err)
+		} else {
 			restarted = true
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"ok":        true,
-		"message":   "设置已保存",
-		"restarted": restarted,
-	})
+	resp := map[string]interface{}{
+		"ok":         true,
+		"saved":      true,
+		"message":    "设置已保存",
+		"wasRunning": wasRunning,
+		"restarted":  restarted,
+	}
+	if restartErr != "" {
+		resp["message"] = "设置已保存，但下载器重启失败：" + restartErr
+		resp["restartError"] = restartErr
+		resp["warning"] = "新配置已写入，但下载器未能用新配置重启，请手动停止后重新开始监听"
+		log.Printf("[station] 设置已保存但重启失败：%s", restartErr)
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // mergeMaps 深度合并：incoming 的值覆盖 base；map 递归合并，其它类型直接替换
@@ -358,98 +373,42 @@ var (
 	qrProc   *exec.Cmd // 正在等待扫码的进程（下次生成前杀掉，避免堆积）
 )
 
-// loginQrHandler 调用 Python 脚本的 --qr-only 模式：
+// killQrProcLocked 作废上一个等待扫码的进程（调用方需持有 qrProcMu）。
+func killQrProcLocked() {
+	if qrProc == nil {
+		return
+	}
+	if qrProc.Process != nil {
+		_ = killProcessTree(qrProc.Process.Pid)
+		_ = qrProc.Wait()
+	}
+	qrProc = nil
+}
+
+// loginQrHandler 生成登录二维码 / 检查是否已登录：
 // 已登录 → already + username；未登录 → qr（base64 二维码）；失败 → error。
-// 二维码生成阶段超时 30 秒。
+// 子进程统一由 downloader.startQrLogin 构建（优先 CLI exe，其次 python + 脚本），
+// 拿到第一行 JSON 立刻返回给前端，进程继续挂起等待扫码。
 func loginQrHandler(w http.ResponseWriter, r *http.Request) {
 	if downloader.isRunning() {
 		writeErr(w, http.StatusConflict, "下载器正在运行，请先停止监听再扫码登录")
 		return
 	}
-	py, err := downloader.findPython()
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	script, err := downloader.findScript()
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
-		return
-	}
 
 	// 作废上一张二维码：杀掉上一个等待扫码的进程
 	qrProcMu.Lock()
-	if qrProc != nil && qrProc.Process != nil {
-		qrProc.Process.Kill()
-		qrProc.Wait()
-	}
-	qrProc = nil
+	killQrProcLocked()
 	qrProcMu.Unlock()
 
-	cmd := exec.Command(py, script, "--qr-only")
-	cmd.Dir = filepath.Dir(script)
-	cmd.Env = append(os.Environ(),
-		"TG_STATION_CONFIG="+configPath,
-		"PYTHONUTF8=1",
-		"PYTHONIOENCODING=utf-8",
-	)
-	cmd.SysProcAttr = childProcAttr()
-
-	stdout, err := cmd.StdoutPipe()
+	cmd, result, desc, err := downloader.startQrLogin(qrFirstLineTimeout)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "登录进程管道创建失败")
+		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := cmd.Start(); err != nil {
-		writeErr(w, http.StatusInternalServerError, "登录进程启动失败: "+err.Error())
-		return
-	}
-
-	// 读取第一行合法 JSON（二维码就绪 / 已登录 / 失败），进程继续挂起等扫码
-	type lineResult struct {
-		line []byte
-		err  error
-	}
-	lineCh := make(chan lineResult, 1)
-	go func() {
-		br := bufio.NewReader(stdout)
-		for {
-			line, err := br.ReadString('\n')
-			line = strings.TrimSpace(line)
-			if line != "" && json.Valid([]byte(line)) {
-				lineCh <- lineResult{line: []byte(line)}
-				return
-			}
-			if err != nil {
-				lineCh <- lineResult{err: err}
-				return
-			}
-		}
-	}()
-
-	var raw []byte
-	select {
-	case res := <-lineCh:
-		if res.err != nil && len(res.line) == 0 {
-			cmd.Process.Kill()
-			writeErr(w, http.StatusInternalServerError, "登录进程无输出")
-			return
-		}
-		raw = res.line
-	case <-time.After(30 * time.Second):
-		cmd.Process.Kill()
-		writeErr(w, http.StatusGatewayTimeout, "登录请求超时（30 秒），请重试")
-		return
-	}
+	log.Printf("[station] 扫码登录进程已启动：%s", desc)
 
 	// 收尸：扫码成功/超时后进程自行退出
-	go func() { cmd.Wait() }()
-
-	var result map[string]interface{}
-	if err := json.Unmarshal(raw, &result); err != nil || result == nil {
-		writeErr(w, http.StatusInternalServerError, "登录进程输出异常")
-		return
-	}
+	go func() { _ = cmd.Wait() }()
 
 	switch result["status"] {
 	case "already", "success":
@@ -483,45 +442,21 @@ func loginQrHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// loginStatusHandler 检查登录状态：调用 Python --check-session 本地判断
-// session 是否有有效 auth key（不连网，毫秒级）。
-// 进程调用失败时回退到文件存在性判断。
+// loginStatusHandler 检查登录状态：优先调用下载器 --check-session 本地判断
+// session 是否有有效 auth key（不连网，毫秒级；超时 15 秒）。
+// 子进程不可用、超时或输出异常时，回退到 session 文件存在性判断。
 func loginStatusHandler(w http.ResponseWriter, r *http.Request) {
-	py, err := downloader.findPython()
-	script, err2 := downloader.findScript()
-
-	if err == nil && err2 == nil {
-		cmd := exec.Command(py, script, "--check-session")
-		cmd.Dir = filepath.Dir(script)
-		cmd.Env = append(os.Environ(),
-			"TG_STATION_CONFIG="+configPath,
-			"PYTHONUTF8=1",
-			"PYTHONIOENCODING=utf-8",
-		)
-		cmd.SysProcAttr = childProcAttr()
-		if out, err := cmd.Output(); err == nil {
-			var result map[string]interface{}
-			lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-			for i := len(lines) - 1; i >= 0; i-- {
-				line := strings.TrimSpace(lines[i])
-				if line == "" {
-					continue
-				}
-				if json.Unmarshal([]byte(line), &result) == nil {
-					break
-				}
-			}
-			if result != nil {
-				switch result["status"] {
-				case "logged_in", "not_logged_in":
-					writeJSON(w, http.StatusOK, map[string]interface{}{
-						"ok":     true,
-						"status": result["status"],
-					})
-					return
-				}
-			}
+	if obj, err := downloader.runModeJSON(modeCheckSession, checkSessionTimeout); err != nil {
+		log.Printf("[station] --check-session 调用失败，回退到 session 文件判断: %v", err)
+	} else if obj != nil {
+		if status, _ := obj["status"].(string); status == "logged_in" || status == "not_logged_in" {
+			writeJSON(w, http.StatusOK, map[string]interface{}{
+				"ok":     true,
+				"status": status,
+			})
+			return
 		}
+		log.Printf("[station] --check-session 输出缺少 status 字段，回退到 session 文件判断")
 	}
 
 	// 回退：session 文件存在性检查
@@ -630,7 +565,8 @@ func nameListHandler(w http.ResponseWriter, r *http.Request) {
 // ---------- /api/channels ----------
 
 // channelsHandler 列出账号已加入的频道，供设置面板的「频道选择器」使用。
-// 调用 Python 脚本 --list-channels 子模式（连接 TG 拉取对话列表）。
+// 子进程统一由 downloader.runModeJSON 构建（优先 CLI exe，其次 python + 脚本），
+// 带超时与退出码/空输出/非法 JSON 处理。
 // 注意：session 数据库被下载器进程独占，运行中无法并发读取 → 需先停止监听。
 func channelsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -641,46 +577,10 @@ func channelsHandler(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, "下载器正在运行，请先停止监听再加载频道列表")
 		return
 	}
-	py, err := downloader.findPython()
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	script, err := downloader.findScript()
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
-		return
-	}
 
-	cmd := exec.Command(py, script, "--list-channels")
-	cmd.Dir = filepath.Dir(script)
-	cmd.Env = append(os.Environ(),
-		"TG_STATION_CONFIG="+configPath,
-		"PYTHONUTF8=1",
-		"PYTHONIOENCODING=utf-8",
-	)
-	cmd.SysProcAttr = childProcAttr()
-
-	out, err := cmd.Output()
+	result, err := downloader.runModeJSON(modeListChannels, listChannelsTimeout)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "频道列表获取失败: "+err.Error())
-		return
-	}
-
-	// 取最后一行合法 JSON（Python 可能输出日志/警告）
-	var result map[string]interface{}
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		line := strings.TrimSpace(lines[i])
-		if line == "" {
-			continue
-		}
-		if json.Unmarshal([]byte(line), &result) == nil {
-			break
-		}
-	}
-	if result == nil {
-		writeErr(w, http.StatusInternalServerError, "频道列表输出异常")
 		return
 	}
 	if result["status"] != "ok" {

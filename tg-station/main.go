@@ -304,10 +304,10 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 		for _, f := range mediaIndex {
 			if f.Date.Format("2006-01-02") == firstDate {
 				firstFiles = append(firstFiles, LightMediaFile{
-					Path:    f.Path,
-					Date:    f.Date.Format("2006-01-02"),
-					IsVideo: f.IsVideo,
-					Size:    f.Size,
+					Path:     f.Path,
+					Date:     f.Date.Format("2006-01-02"),
+					IsVideo:  f.IsVideo,
+					Size:     f.Size,
 					Duration: f.Duration,
 				})
 				if len(firstFiles) >= 100 {
@@ -356,13 +356,50 @@ func datesHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// 文件列表分页：每页 100 条（前端与旧接口约定，不能改）。
+const filesPageSize = 100
+
+// maxPageNumber 页码上限：page 已经很离谱时直接判为非法参数，
+// 从根上避免 (page-1)*pageSize 造成的整数溢出。
+const maxPageNumber = 10_000_000
+
+// parsePageParam 解析 page 查询参数：
+//   - 未传 → 第 1 页
+//   - 非整数 / 小于 1 / 超过上限 → 返回错误（由调用方回 HTTP 400）
+//
+// 原实现用 strconv.Atoi 后忽略错误、也不校验最小值：page=0 或负数会让
+// 切片起点变成负数 → 越界 panic；非数字则被当成 0。
+func parsePageParam(raw string) (int, error) {
+	if raw == "" {
+		return 1, nil
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("page 参数必须是整数（收到 %q）", clip(raw, 32))
+	}
+	if n < 1 {
+		return 0, fmt.Errorf("page 参数必须大于等于 1（收到 %d）", n)
+	}
+	if n > maxPageNumber {
+		return 0, fmt.Errorf("page 参数过大（上限 %d，收到 %d）", maxPageNumber, n)
+	}
+	return n, nil
+}
+
 func filesHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "max-age=300")
 	date := strings.TrimPrefix(r.URL.Path, "/api/files/")
-	pageStr := r.URL.Query().Get("page")
-	page := 1
-	if pageStr != "" {
-		page, _ = strconv.Atoi(pageStr)
+
+	page, err := parsePageParam(r.URL.Query().Get("page"))
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"ok":    false,
+			"error": err.Error(),
+			"date":  date,
+		})
+		return
 	}
 
 	indexMutex.RLock()
@@ -373,26 +410,31 @@ func filesHandler(w http.ResponseWriter, r *http.Request) {
 	for _, f := range mediaIndex {
 		if f.Date.Format("2006-01-02") == targetDate {
 			files = append(files, LightMediaFile{
-				Path:    f.Path,
-				Date:    f.Date.Format("2006-01-02"),
-				IsVideo: f.IsVideo,
-				Size:    f.Size,
+				Path:     f.Path,
+				Date:     f.Date.Format("2006-01-02"),
+				IsVideo:  f.IsVideo,
+				Size:     f.Size,
 				Duration: f.Duration,
 			})
 		}
 	}
 
-	pageSize := 100
+	pageSize := filesPageSize
 	total := len(files)
 	pages := (total + pageSize - 1) / pageSize
-	start := (page - 1) * pageSize
-	end := start + pageSize
-	if start > total {
+
+	// 用 int64 计算切片边界：即使 page 被放大也不会溢出
+	start := int64(page-1) * int64(pageSize)
+	switch {
+	case start >= int64(total):
+		// 页码超出实际页数 → 正常返回空数组（不越界、不报错）
 		files = []LightMediaFile{}
-	} else if end > total {
-		files = files[start:]
-	} else {
-		files = files[start:end]
+	default:
+		end := start + int64(pageSize)
+		if end > int64(total) {
+			end = int64(total)
+		}
+		files = files[int(start):int(end)]
 	}
 
 	w.Header().Set("Content-Type", "application/json")

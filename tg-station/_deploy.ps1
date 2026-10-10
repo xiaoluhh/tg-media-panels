@@ -70,7 +70,7 @@ if (Get-Process tg_station -ErrorAction SilentlyContinue) {
 Say "=== 3/6 backup ==="
 $bdir = Join-Path $station ("_bak_" + $stamp)
 New-Item -ItemType Directory -Path $bdir -Force | Out-Null
-foreach ($f in 'tg_station.exe', 'tg_downloader.exe') {
+foreach ($f in 'tg_station.exe', 'tg_downloader.exe', 'tg_downloader_cli.exe') {
     $src = Join-Path $station $f
     if (Test-Path $src) { Copy-Item $src (Join-Path $bdir $f) -Force }
 }
@@ -91,6 +91,16 @@ foreach ($p in $pairs) {
         Copy-Item $p.src $p.dst -Force
         Say ("   {0} -> {1} bytes" -f (Split-Path $p.dst -Leaf), (Get-Item $p.dst).Length)
     } else { Say ("   !! missing " + $p.src) }
+}
+# CLI downloader (console build) - used by /api/login/qr, /api/login/status, /api/channels.
+# Optional: when absent, those endpoints fall back to python + tg_auto_download.py.
+$cliSrc = Join-Path $repo 'dist\tg_downloader_cli.exe'
+$cliDst = Join-Path $station 'tg_downloader_cli.exe'
+if (Test-Path $cliSrc) {
+    Copy-Item $cliSrc $cliDst -Force
+    Say ("   tg_downloader_cli.exe -> {0} bytes" -f (Get-Item $cliDst).Length)
+} else {
+    Say '   !! dist\tg_downloader_cli.exe missing - QR/login/channels fall back to python + script'
 }
 foreach ($f in 'index.html', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png') {
     $src = Join-Path $repo ("static\" + $f)

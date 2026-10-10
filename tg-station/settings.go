@@ -12,9 +12,10 @@ import (
 // Python 下载器原有的所有字段（api_id、api_hash、channels、download_dir 等）
 // 原样保留在 config.json 顶层，Go 端不解析、不改动，只透传。
 type StationConfig struct {
-	Python        string `json:"python"`         // Python 解释器路径（旧模式），空 = 自动探测
-	Script        string `json:"script"`         // tg_auto_download.py 路径（旧模式），空 = exe 目录下
-	DownloaderExe string `json:"downloader_exe"` // 打包后的下载器 exe（新模式），空 = exe 目录/tg_downloader.exe
+	Python        string `json:"python"`         // Python 解释器路径（回退模式），空 = 自动探测（会实际执行 --version 验证）
+	Script        string `json:"script"`         // tg_auto_download.py 路径（回退模式），空 = exe 目录下
+	DownloaderExe string `json:"downloader_exe"` // 后台下载器 exe（常驻监听用，无控制台窗口），空 = exe 目录/tg_downloader.exe
+	DownloaderCLI string `json:"downloader_cli"` // CLI 下载器 exe（扫码/登录检查/频道列表用，带控制台以便输出 JSON），空 = exe 目录/tg_downloader_cli.exe
 	MediaDir      string `json:"media_dir"`      // 媒体目录，空 = config 的 download_dir
 	AutoStart     bool   `json:"auto_start"`     // 程序启动时自动拉起下载器
 }
