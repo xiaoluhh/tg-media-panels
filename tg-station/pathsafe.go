@@ -369,6 +369,30 @@ func safeDeleteTarget(mediaRoot, requested string) (MediaPath, error) {
 	return mp, nil
 }
 
+// ErrNotMedia 表示目标不是允许对外提供的媒体类型。
+// 只放行索引里会出现的图片/视频后缀（imageExts ∪ videoExts，见 main.go）：
+// 媒体目录一旦混进配置文件、Telegram 凭证（.session）、文档等无关文件，
+// 也不能被网页读走或删掉（纵深防御，2026-10-11 审查）。
+var ErrNotMedia = errors.New("不是允许的媒体类型")
+
+// isAllowedMediaExt 判断相对路径是否属于允许的媒体类型（图片/视频）。
+func isAllowedMediaExt(name string) bool {
+	ext := strings.ToLower(filepath.Ext(name))
+	return imageExts[ext] || videoExts[ext]
+}
+
+// requireMediaExt 媒体类型校验；不合格时返回 ErrNotMedia（映射为 403）。
+func requireMediaExt(rel string) error {
+	if isAllowedMediaExt(rel) {
+		return nil
+	}
+	ext := filepath.Ext(rel)
+	if ext == "" {
+		ext = "（无后缀）"
+	}
+	return fmt.Errorf("%w: %s", ErrNotMedia, ext)
+}
+
 // writeMediaPathError 把安全校验错误映射为 HTTP 响应：
 // 目标不存在 → 404；其余（越界、链接逃逸、非法路径、不可解析）→ 403。
 // 响应体只包含固定文本，绝不回显服务器绝对路径。

@@ -3,7 +3,7 @@
 本文件是把 `tg-station/` 目录下**全部源码、测试、前端、构建脚本**按顺序拼成的单文件，
 方便一次性阅读或用抓取工具获取（GitHub 子目录页面有时不可访问，读这一个文件即可）。
 
-## 文件清单（47 个）
+## 文件清单（48 个）
 
 - `README.md` （17811 字节）
 - `api.go` （22301 字节）
@@ -17,9 +17,10 @@
 - `index.go` （3552 字节）
 - `index_test.go` （5033 字节）
 - `login_qr_test.go` （4986 字节）
-- `main.go` （17881 字节）
+- `main.go` （18507 字节）
+- `media_ext_test.go` （4017 字节）
 - `media_handlers_test.go` （11605 字节）
-- `pathsafe.go` （14325 字节）
+- `pathsafe.go` （15258 字节）
 - `pathsafe_other.go` （313 字节）
 - `pathsafe_test.go` （13719 字节）
 - `pathsafe_windows.go` （895 字节）
@@ -53,7 +54,7 @@
 - `tg_downloader.spec` （1487 字节）
 - `tg_downloader_cli.spec` （2238 字节）
 
-合计正文约 423 KB。
+合计正文约 427 KB。
 
 
 ---
@@ -3780,6 +3781,11 @@ func fileHandler(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	// 只提供图片/视频：媒体目录里若混进配置、凭证、文档，一律拒绝（403）
+	if err := requireMediaExt(mp.Rel); err != nil {
+		writeMediaPathError(w, r, "file", path, err)
+		return
+	}
 
 	ext := strings.ToLower(filepath.Ext(mp.Rel))
 	if videoExts[ext] {
@@ -3820,6 +3826,12 @@ func deleteHandler(w http.ResponseWriter, r *http.Request) {
 				logPathReject("delete", fileName, err)
 				failed++
 			}
+			continue
+		}
+		// 只允许删图片/视频：媒体目录里的配置、凭证、文档等一律不动
+		if err := requireMediaExt(mp.Rel); err != nil {
+			logPathReject("delete", fileName, err)
+			failed++
 			continue
 		}
 		srcInfo, statErr := os.Stat(mp.Real)
@@ -3864,6 +3876,11 @@ func thumbHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if mp.Info.IsDir() {
 		http.NotFound(w, r)
+		return
+	}
+	// 缩略图同样只针对图片/视频，避免对配置/凭证等无关文件调 ffmpeg
+	if err := requireMediaExt(mp.Rel); err != nil {
+		writeMediaPathError(w, r, "thumbnail", path, err)
 		return
 	}
 
@@ -3955,6 +3972,128 @@ func bilinearInterp(c00, c01, c10, c11 uint32, xFrac, yFrac float64) float64 {
 	top := float64(c00)*(1-xFrac) + float64(c10)*xFrac
 	bot := float64(c01)*(1-xFrac) + float64(c11)*xFrac
 	return top*(1-yFrac) + bot*yFrac
+}
+
+```
+
+
+---
+
+## 文件：media_ext_test.go
+
+```go
+package main
+
+import (
+	"encoding/json"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// 媒体目录里混进无关文件时，网页既不能读也不能删（纵深防御）。
+// 允许的只有索引里会出现的图片/视频后缀。
+
+func TestIsAllowedMediaExt(t *testing.T) {
+	allowed := []string{"a.jpg", "A.JPEG", "pic.png", "x.gif", "y.webp",
+		"v.mp4", "v.avi", "v.mov", "v.mkv", "v.webm", "sub/dir/a.jpg"}
+	denied := []string{"config.json", "tg_session.session", "notes.txt", "run.exe",
+		"archive.zip", "doc.pdf", "noext", "a.jpg.bak", ".env", "a.js", "a.html"}
+	for _, n := range allowed {
+		if !isAllowedMediaExt(n) {
+			t.Errorf("%q 应被允许（图片/视频）", n)
+		}
+	}
+	for _, n := range denied {
+		if isAllowedMediaExt(n) {
+			t.Errorf("%q 不该被允许（非媒体类型）", n)
+		}
+	}
+}
+
+func TestFileHandlerRejectsNonMediaFiles(t *testing.T) {
+	env := setupMediaEnv(t)
+	defer env.restore()
+
+	// 模拟「媒体目录里混进了不该在的东西」
+	writeFileT(t, filepath.Join(env.root, "config.json"), `{"api_hash":"LEAKED"}`)
+	writeFileT(t, filepath.Join(env.root, "tg_session.session"), "LEAKED-SESSION")
+	writeFileT(t, filepath.Join(env.root, "notes.txt"), "LEAKED-NOTES")
+	writeFileT(t, filepath.Join(env.root, "payload.exe"), "MZ")
+	writeFileT(t, filepath.Join(env.root, "noext"), "LEAKED-NOEXT")
+	writeFileT(t, filepath.Join(env.root, "sub", "deep.json"), `{"deep":"LEAKED"}`)
+
+	for _, target := range []string{"/api/file/config.json", "/api/file/tg_session.session",
+		"/api/file/notes.txt", "/api/file/payload.exe", "/api/file/noext", "/api/file/sub/deep.json"} {
+		rec := doRequest(fileHandler, http.MethodGet, target, nil)
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("%s 应 403，实际 %d", target, rec.Code)
+		}
+		if strings.Contains(rec.Body.String(), "LEAKED") {
+			t.Errorf("%s 泄露了文件内容", target)
+		}
+	}
+
+	// 正常图片/视频不受影响
+	for _, target := range []string{"/api/file/pic.jpg", "/api/file/sub/deep.jpg", "/api/file/clip.mp4"} {
+		if rec := doRequest(fileHandler, http.MethodGet, target, nil); rec.Code != http.StatusOK {
+			t.Errorf("%s 应 200，实际 %d", target, rec.Code)
+		}
+	}
+}
+
+func TestDeleteHandlerRefusesNonMediaFiles(t *testing.T) {
+	env := setupMediaEnv(t)
+	defer env.restore()
+
+	cfg := filepath.Join(env.root, "config.json")
+	sess := filepath.Join(env.root, "tg_session.session")
+	writeFileT(t, cfg, `{"api_hash":"LEAKED"}`)
+	writeFileT(t, sess, "LEAKED-SESSION")
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"files": []string{"config.json", "tg_session.session", "pic.jpg"},
+	})
+	rec := doRequest(deleteHandler, http.MethodPost, "/api/delete", body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("状态码 = %d，期望 200", rec.Code)
+	}
+	var resp struct {
+		Success bool `json:"success"`
+		Deleted int  `json:"deleted"`
+		Failed  int  `json:"failed"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("响应不是合法 JSON: %v", err)
+	}
+	if resp.Deleted != 1 || resp.Failed != 2 {
+		t.Errorf("期望 deleted=1 failed=2（只删掉图片），实际 deleted=%d failed=%d", resp.Deleted, resp.Failed)
+	}
+	if _, err := os.Stat(cfg); err != nil {
+		t.Errorf("配置文件不得被删除: %v", err)
+	}
+	if _, err := os.Stat(sess); err != nil {
+		t.Errorf("session 文件不得被删除: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(env.root, "pic.jpg")); !os.IsNotExist(err) {
+		t.Error("正常图片应被删除")
+	}
+}
+
+func TestThumbHandlerRejectsNonMediaFiles(t *testing.T) {
+	env := setupMediaEnv(t)
+	defer env.restore()
+
+	writeFileT(t, filepath.Join(env.root, "config.json"), `{"api_hash":"LEAKED"}`)
+
+	if rec := doRequest(thumbHandler, http.MethodGet, "/thumb/config.json", nil); rec.Code != http.StatusForbidden {
+		t.Errorf("非媒体文件缩略图应 403，实际 %d", rec.Code)
+	}
+	if rec := doRequest(thumbHandler, http.MethodGet, "/thumb/pic.jpg", nil); rec.Code != http.StatusOK {
+		t.Errorf("图片缩略图应 200，实际 %d", rec.Code)
+	}
 }
 
 ```
@@ -4678,6 +4817,30 @@ func safeDeleteTarget(mediaRoot, requested string) (MediaPath, error) {
 		return MediaPath{}, fmt.Errorf("%w: 目标类型不允许删除", ErrPathOutside)
 	}
 	return mp, nil
+}
+
+// ErrNotMedia 表示目标不是允许对外提供的媒体类型。
+// 只放行索引里会出现的图片/视频后缀（imageExts ∪ videoExts，见 main.go）：
+// 媒体目录一旦混进配置文件、Telegram 凭证（.session）、文档等无关文件，
+// 也不能被网页读走或删掉（纵深防御，2026-10-11 审查）。
+var ErrNotMedia = errors.New("不是允许的媒体类型")
+
+// isAllowedMediaExt 判断相对路径是否属于允许的媒体类型（图片/视频）。
+func isAllowedMediaExt(name string) bool {
+	ext := strings.ToLower(filepath.Ext(name))
+	return imageExts[ext] || videoExts[ext]
+}
+
+// requireMediaExt 媒体类型校验；不合格时返回 ErrNotMedia（映射为 403）。
+func requireMediaExt(rel string) error {
+	if isAllowedMediaExt(rel) {
+		return nil
+	}
+	ext := filepath.Ext(rel)
+	if ext == "" {
+		ext = "（无后缀）"
+	}
+	return fmt.Errorf("%w: %s", ErrNotMedia, ext)
 }
 
 // writeMediaPathError 把安全校验错误映射为 HTTP 响应：

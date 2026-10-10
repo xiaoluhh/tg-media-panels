@@ -442,6 +442,11 @@ func fileHandler(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	// 只提供图片/视频：媒体目录里若混进配置、凭证、文档，一律拒绝（403）
+	if err := requireMediaExt(mp.Rel); err != nil {
+		writeMediaPathError(w, r, "file", path, err)
+		return
+	}
 
 	ext := strings.ToLower(filepath.Ext(mp.Rel))
 	if videoExts[ext] {
@@ -482,6 +487,12 @@ func deleteHandler(w http.ResponseWriter, r *http.Request) {
 				logPathReject("delete", fileName, err)
 				failed++
 			}
+			continue
+		}
+		// 只允许删图片/视频：媒体目录里的配置、凭证、文档等一律不动
+		if err := requireMediaExt(mp.Rel); err != nil {
+			logPathReject("delete", fileName, err)
+			failed++
 			continue
 		}
 		srcInfo, statErr := os.Stat(mp.Real)
@@ -526,6 +537,11 @@ func thumbHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if mp.Info.IsDir() {
 		http.NotFound(w, r)
+		return
+	}
+	// 缩略图同样只针对图片/视频，避免对配置/凭证等无关文件调 ffmpeg
+	if err := requireMediaExt(mp.Rel); err != nil {
+		writeMediaPathError(w, r, "thumbnail", path, err)
 		return
 	}
 
