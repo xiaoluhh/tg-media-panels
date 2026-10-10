@@ -3,14 +3,15 @@
 本文件是把 `tg-station/` 目录下**全部源码、测试、前端、构建脚本**按顺序拼成的单文件，
 方便一次性阅读或用抓取工具获取（GitHub 子目录页面有时不可访问，读这一个文件即可）。
 
-## 文件清单（46 个）
+## 文件清单（47 个）
 
 - `README.md` （17811 字节）
-- `api.go` （22054 字节）
+- `api.go` （22301 字节）
 - `cli_integration_test.go` （1810 字节）
 - `console_other.go` （142 字节）
 - `console_windows.go` （802 字节）
-- `downloader.go` （25632 字节）
+- `downloader.go` （27562 字节）
+- `downloader_start_test.go` （3644 字节）
 - `downloader_test.go` （15790 字节）
 - `files_pagination_test.go` （5817 字节）
 - `index.go` （3552 字节）
@@ -52,7 +53,7 @@
 - `tg_downloader.spec` （1487 字节）
 - `tg_downloader_cli.spec` （2238 字节）
 
-合计正文约 418 KB。
+合计正文约 423 KB。
 
 
 ---
@@ -769,6 +770,11 @@ func beginQrLogin() (*exec.Cmd, map[string]interface{}, string, error) {
 // 子进程统一由 downloader.startQrLogin 构建（优先 CLI exe，其次 python + 脚本），
 // 拿到第一行 JSON 立刻返回给前端，进程继续挂起等待扫码。
 func loginQrHandler(w http.ResponseWriter, r *http.Request) {
+	// 与「启动/停止下载器」互斥：扫码进程和下载器不能同时占用同一个 session。
+	// 加锁顺序 sessionMu → qrMu（qrMu 在 beginQrLogin 里取）。
+	downloader.sessionMu.Lock()
+	defer downloader.sessionMu.Unlock()
+
 	if downloader.isRunning() {
 		writeErr(w, http.StatusConflict, "下载器正在运行，请先停止监听再扫码登录")
 		return
@@ -1166,16 +1172,21 @@ func (r *ringBuffer) all() []string {
 
 // Downloader 管理下载器子进程
 type Downloader struct {
-	mu       sync.Mutex
-	cmd      *exec.Cmd
-	state    string
-	pid      int
-	started  time.Time
-	exitCode int
-	exitMsg  string
-	logBuf   *ringBuffer
-	cfg      *AppConfig
-	waitDone chan struct{}
+	mu sync.Mutex
+	// sessionMu 串行化所有「会动到 Telegram session」的操作：启动/停止/重启下载器、
+	// 生成扫码进程。没有它，「连点两下开始监听」或手机+电脑同时点会各起一个下载器，
+	// 两个进程共用一个 session → 被判异地同时使用 → 登录作废甚至封号（2026-10-11 修）。
+	// 加锁顺序固定为 sessionMu → qrMu（见 api.go 扫码流程），不要反过来。
+	sessionMu sync.Mutex
+	cmd       *exec.Cmd
+	state     string
+	pid       int
+	started   time.Time
+	exitCode  int
+	exitMsg   string
+	logBuf    *ringBuffer
+	cfg       *AppConfig
+	waitDone  chan struct{}
 }
 
 var downloader = &Downloader{
@@ -1764,7 +1775,18 @@ func (d *Downloader) startQrLogin(timeout time.Duration) (*exec.Cmd, map[string]
 
 // Start 启动下载器；已在运行（含外部独立进程）则复用，绝不重复启动。
 // 重复启动会导致两个进程共用同一个 Telegram Session → 被判异地同时使用 → 封号。
+//
+// 整个「检查 → 构建 → 启动 → 记录」必须持 sessionMu 完成：
+// 否则连点两次「开始监听」（或手机与电脑同时点）时，两个请求都会通过 isRunning()
+// 检查、各起一个进程——这正是最怕的双实例场景。
 func (d *Downloader) Start() error {
+	d.sessionMu.Lock()
+	defer d.sessionMu.Unlock()
+	return d.startLocked()
+}
+
+// startLocked 是 Start 的实际逻辑；调用方必须已持有 sessionMu。
+func (d *Downloader) startLocked() error {
 	if d.isRunning() {
 		d.mu.Lock()
 		if d.cmd != nil {
@@ -1775,7 +1797,7 @@ func (d *Downloader) Start() error {
 		return nil
 	}
 
-	c, err := d.buildStartCommand()
+	c, err := d.startCommand()
 	if err != nil {
 		return err
 	}
@@ -1818,6 +1840,18 @@ func (d *Downloader) Start() error {
 
 	return nil
 }
+
+// startCommand 返回本次启动要执行的命令。startCommandHook 供单元测试替换，
+// 生产环境为 nil（走真实的 buildStartCommand）。
+func (d *Downloader) startCommand() (dlCommand, error) {
+	if startCommandHook != nil {
+		return startCommandHook(d)
+	}
+	return d.buildStartCommand()
+}
+
+// startCommandHook 单元测试注入点；生产环境始终为 nil。
+var startCommandHook func(*Downloader) (dlCommand, error)
 
 // pump 把子进程输出逐行写入日志
 func (d *Downloader) pump(r io.Reader, tag string) {
@@ -1869,7 +1903,16 @@ func (d *Downloader) wait(cmd *exec.Cmd) {
 }
 
 // Stop 停止下载器：既结束 Go 托管的子进程，也结束外部独立进程（开机自启/手动启动）。
+// 与 Start/Restart 共用 sessionMu —— 否则「停止」与「开始」并发时，停止流程里那句
+// 「确认已经退出」可能被并发的启动插进来，导致两个实例并存。
 func (d *Downloader) Stop() error {
+	d.sessionMu.Lock()
+	defer d.sessionMu.Unlock()
+	return d.stopLocked()
+}
+
+// stopLocked 是 Stop 的实际逻辑；调用方必须已持有 sessionMu。
+func (d *Downloader) stopLocked() error {
 	d.mu.Lock()
 	cmd := d.cmd
 	managed := d.managedRunningLocked()
@@ -1929,18 +1972,168 @@ func (d *Downloader) resetStateIfSame(cmd *exec.Cmd) {
 
 // Restart 重启下载器以应用新配置。
 // 依据「真实运行状态」（含外部独立进程）决定是否重启，不能只看内部 d.state。
+// 全程持有 sessionMu：停止与启动之间不允许别的「开始监听」插进来。
 func (d *Downloader) Restart() error {
+	d.sessionMu.Lock()
+	defer d.sessionMu.Unlock()
+
 	wasRunning := d.isRunning()
 	if !wasRunning {
 		return nil
 	}
-	if err := d.Stop(); err != nil {
+	if err := d.stopLocked(); err != nil {
 		return err
 	}
 	if d.isRunning() {
 		return errors.New("旧下载器未完全退出，已取消重启（避免两个实例共用同一个 session）")
 	}
-	return d.Start()
+	return d.startLocked()
+}
+
+```
+
+
+---
+
+## 文件：downloader_start_test.go
+
+```go
+package main
+
+import (
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+)
+
+// useStartHook 把启动命令换成「会活一会儿的假下载器」，并统计构建命令的次数。
+// 钩子里故意 sleep 一小段：这正是旧实现里 isRunning() 检查与 d.cmd 赋值之间的
+// 竞态窗口——没有 sessionMu 时，并发请求会全部穿过检查、各起一个进程。
+func useStartHook(t *testing.T, calls *int32, buildDelay time.Duration) {
+	t.Helper()
+	old := startCommandHook
+	startCommandHook = func(d *Downloader) (dlCommand, error) {
+		atomic.AddInt32(calls, 1)
+		time.Sleep(buildDelay)
+		fake := sleepCmd(30)
+		return dlCommand{Path: fake.Path, Args: fake.Args[1:], desc: "测试假下载器"}, nil
+	}
+	t.Cleanup(func() { startCommandHook = old })
+}
+
+func managedPid(d *Downloader) int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.pid
+}
+
+// 连点「开始监听」（或手机+电脑同时点）只能起一个下载器。
+func TestStartSerializedSoOnlyOneDownloaderRuns(t *testing.T) {
+	stubExternal(t) // 没有外部独立下载器
+	var calls int32
+	useStartHook(t, &calls, 150*time.Millisecond)
+
+	d := newTestDownloader("", "")
+	t.Cleanup(func() { _ = d.Stop() })
+
+	const n = 4
+	var wg sync.WaitGroup
+	errs := make([]error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			errs[i] = d.Start()
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("第 %d 个 Start 返回错误: %v", i+1, err)
+		}
+	}
+	if c := atomic.LoadInt32(&calls); c != 1 {
+		t.Fatalf("并发 %d 次「开始监听」应只启动 1 个下载器，实际启动了 %d 个（双实例共用 session 会封号）", n, c)
+	}
+	if managedPid(d) == 0 {
+		t.Fatal("启动后没有记录 PID")
+	}
+}
+
+// Restart 内部要调 Stop+Start，若与 sessionMu 互锁就会死锁——这里守着超时跑一遍。
+func TestRestartDoesNotDeadlockAndRestartsOnce(t *testing.T) {
+	stubExternal(t)
+	var calls int32
+	useStartHook(t, &calls, 0)
+
+	d := newTestDownloader("", "")
+	t.Cleanup(func() { _ = d.Stop() })
+
+	if err := d.Start(); err != nil {
+		t.Fatalf("首次 Start 失败: %v", err)
+	}
+	firstPid := managedPid(d)
+
+	done := make(chan error, 1)
+	go func() { done <- d.Restart() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Restart 失败: %v", err)
+		}
+	case <-time.After(60 * time.Second):
+		t.Fatal("Restart 超时（sessionMu 与 Stop/Start 互锁，或旧进程没被收掉）")
+	}
+
+	if c := atomic.LoadInt32(&calls); c != 2 {
+		t.Fatalf("Start + Restart 应各启动一次（共 2 次），实际 %d 次", c)
+	}
+	if pid := managedPid(d); pid == 0 || pid == firstPid {
+		t.Fatalf("重启后 PID 未更新（旧 %d，新 %d）", firstPid, pid)
+	}
+}
+
+// 「开始监听」与「停止监听」并发轰炸：结束后不能留下受管进程引用，
+// 且停止流程返回后必须确实没有受管进程在跑。
+func TestStartStopStormEndsClean(t *testing.T) {
+	stubExternal(t)
+	var calls int32
+	useStartHook(t, &calls, 20*time.Millisecond)
+
+	d := newTestDownloader("", "")
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			if i%2 == 0 {
+				_ = d.Start()
+			} else {
+				_ = d.Stop()
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	if err := d.Stop(); err != nil {
+		t.Fatalf("收尾 Stop 失败: %v", err)
+	}
+	d.mu.Lock()
+	leftover := d.cmd
+	state := d.state
+	d.mu.Unlock()
+	if leftover != nil {
+		t.Fatal("停止后仍挂着受管进程引用")
+	}
+	if state != dlStateIdle {
+		t.Fatalf("停止后状态应为 idle，实际 %s", state)
+	}
+	if pid := managedPid(d); pid != 0 {
+		t.Fatalf("停止后 PID 应为 0，实际 %d", pid)
+	}
 }
 
 ```

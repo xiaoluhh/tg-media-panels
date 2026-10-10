@@ -464,6 +464,11 @@ func beginQrLogin() (*exec.Cmd, map[string]interface{}, string, error) {
 // 子进程统一由 downloader.startQrLogin 构建（优先 CLI exe，其次 python + 脚本），
 // 拿到第一行 JSON 立刻返回给前端，进程继续挂起等待扫码。
 func loginQrHandler(w http.ResponseWriter, r *http.Request) {
+	// 与「启动/停止下载器」互斥：扫码进程和下载器不能同时占用同一个 session。
+	// 加锁顺序 sessionMu → qrMu（qrMu 在 beginQrLogin 里取）。
+	downloader.sessionMu.Lock()
+	defer downloader.sessionMu.Unlock()
+
 	if downloader.isRunning() {
 		writeErr(w, http.StatusConflict, "下载器正在运行，请先停止监听再扫码登录")
 		return

@@ -71,16 +71,21 @@ func (r *ringBuffer) all() []string {
 
 // Downloader 管理下载器子进程
 type Downloader struct {
-	mu       sync.Mutex
-	cmd      *exec.Cmd
-	state    string
-	pid      int
-	started  time.Time
-	exitCode int
-	exitMsg  string
-	logBuf   *ringBuffer
-	cfg      *AppConfig
-	waitDone chan struct{}
+	mu sync.Mutex
+	// sessionMu 串行化所有「会动到 Telegram session」的操作：启动/停止/重启下载器、
+	// 生成扫码进程。没有它，「连点两下开始监听」或手机+电脑同时点会各起一个下载器，
+	// 两个进程共用一个 session → 被判异地同时使用 → 登录作废甚至封号（2026-10-11 修）。
+	// 加锁顺序固定为 sessionMu → qrMu（见 api.go 扫码流程），不要反过来。
+	sessionMu sync.Mutex
+	cmd       *exec.Cmd
+	state     string
+	pid       int
+	started   time.Time
+	exitCode  int
+	exitMsg   string
+	logBuf    *ringBuffer
+	cfg       *AppConfig
+	waitDone  chan struct{}
 }
 
 var downloader = &Downloader{
@@ -669,7 +674,18 @@ func (d *Downloader) startQrLogin(timeout time.Duration) (*exec.Cmd, map[string]
 
 // Start 启动下载器；已在运行（含外部独立进程）则复用，绝不重复启动。
 // 重复启动会导致两个进程共用同一个 Telegram Session → 被判异地同时使用 → 封号。
+//
+// 整个「检查 → 构建 → 启动 → 记录」必须持 sessionMu 完成：
+// 否则连点两次「开始监听」（或手机与电脑同时点）时，两个请求都会通过 isRunning()
+// 检查、各起一个进程——这正是最怕的双实例场景。
 func (d *Downloader) Start() error {
+	d.sessionMu.Lock()
+	defer d.sessionMu.Unlock()
+	return d.startLocked()
+}
+
+// startLocked 是 Start 的实际逻辑；调用方必须已持有 sessionMu。
+func (d *Downloader) startLocked() error {
 	if d.isRunning() {
 		d.mu.Lock()
 		if d.cmd != nil {
@@ -680,7 +696,7 @@ func (d *Downloader) Start() error {
 		return nil
 	}
 
-	c, err := d.buildStartCommand()
+	c, err := d.startCommand()
 	if err != nil {
 		return err
 	}
@@ -723,6 +739,18 @@ func (d *Downloader) Start() error {
 
 	return nil
 }
+
+// startCommand 返回本次启动要执行的命令。startCommandHook 供单元测试替换，
+// 生产环境为 nil（走真实的 buildStartCommand）。
+func (d *Downloader) startCommand() (dlCommand, error) {
+	if startCommandHook != nil {
+		return startCommandHook(d)
+	}
+	return d.buildStartCommand()
+}
+
+// startCommandHook 单元测试注入点；生产环境始终为 nil。
+var startCommandHook func(*Downloader) (dlCommand, error)
 
 // pump 把子进程输出逐行写入日志
 func (d *Downloader) pump(r io.Reader, tag string) {
@@ -774,7 +802,16 @@ func (d *Downloader) wait(cmd *exec.Cmd) {
 }
 
 // Stop 停止下载器：既结束 Go 托管的子进程，也结束外部独立进程（开机自启/手动启动）。
+// 与 Start/Restart 共用 sessionMu —— 否则「停止」与「开始」并发时，停止流程里那句
+// 「确认已经退出」可能被并发的启动插进来，导致两个实例并存。
 func (d *Downloader) Stop() error {
+	d.sessionMu.Lock()
+	defer d.sessionMu.Unlock()
+	return d.stopLocked()
+}
+
+// stopLocked 是 Stop 的实际逻辑；调用方必须已持有 sessionMu。
+func (d *Downloader) stopLocked() error {
 	d.mu.Lock()
 	cmd := d.cmd
 	managed := d.managedRunningLocked()
@@ -834,16 +871,20 @@ func (d *Downloader) resetStateIfSame(cmd *exec.Cmd) {
 
 // Restart 重启下载器以应用新配置。
 // 依据「真实运行状态」（含外部独立进程）决定是否重启，不能只看内部 d.state。
+// 全程持有 sessionMu：停止与启动之间不允许别的「开始监听」插进来。
 func (d *Downloader) Restart() error {
+	d.sessionMu.Lock()
+	defer d.sessionMu.Unlock()
+
 	wasRunning := d.isRunning()
 	if !wasRunning {
 		return nil
 	}
-	if err := d.Stop(); err != nil {
+	if err := d.stopLocked(); err != nil {
 		return err
 	}
 	if d.isRunning() {
 		return errors.New("旧下载器未完全退出，已取消重启（避免两个实例共用同一个 session）")
 	}
-	return d.Start()
+	return d.startLocked()
 }
