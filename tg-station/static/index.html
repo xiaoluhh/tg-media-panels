@@ -45,8 +45,10 @@
 
             /* 品牌与强调 */
             --brand-1:      #667eea;
+            --brand-1-deep: #6b5ce0;   /* 承载白字的渐变浅端：白字压 #667eea 只有 3.66:1，压这个有 4.96:1 */
             --brand-2:      #764ba2;
             --brand-soft:   #8b9dff;
+            --brand-deep:   #5b3c86;   /* 品牌渐变的深端：白字压在上面才有 4.5:1，浅端#667eea 只有 3.7:1 */
             --accent-1:     #f7971e;
             --accent-2:     #ffd200;
             --accent-glow:  rgba(255, 210, 0, 0.25);
@@ -104,7 +106,7 @@
             bottom: 0;
             left: 0;
             right: 0;
-            background: linear-gradient(135deg, var(--brand-1), var(--brand-2));
+            background: linear-gradient(135deg, var(--brand-2), var(--brand-deep));
             padding: 15px 20px;
             /* 必须低于灯箱(1000)。原先是 9999：手机上这条“安装到主屏幕”横幅
                盖住了灯箱底部的视频控制条，所有点击都被它吞掉（表现为“按钮点了没反应”）。 */
@@ -119,7 +121,7 @@
         .install-btn {
             padding: 10px 20px;
             background: var(--fg);
-            color: var(--brand-1);
+            color: var(--brand-2);
             border: none;
             border-radius: 10px;
             font-weight: 600;
@@ -141,7 +143,7 @@
             padding: 10px 24px;
             background: var(--btn);
             border: none;
-            color: var(--fg-5);
+            color: var(--fg-3);
             border-radius: 20px;
             cursor: pointer;
             font-size: 16px;
@@ -149,7 +151,7 @@
             transition: all 0.2s ease;
         }
         .filter-btn:hover { background: var(--btn-hover); color: var(--fg); }
-        .filter-btn.active { background: linear-gradient(135deg, var(--brand-1), var(--brand-2)); color: var(--fg); }
+        .filter-btn.active { background: linear-gradient(135deg, var(--brand-1-deep), var(--brand-2)); color: var(--fg); }
         .filter-btn.movie-entry { background: linear-gradient(135deg, var(--accent-1), var(--accent-2)); color: var(--bg-page); box-shadow: 0 2px 12px var(--accent-glow); }
         .filter-btn.movie-entry:hover { filter: brightness(1.1); }
         .action-btns { display: flex; gap: 10px; margin-left: auto; }
@@ -157,7 +159,7 @@
             padding: 10px 20px; 
             background: var(--btn); 
             border: none; 
-            color: var(--fg-5); 
+            color: var(--fg-3); 
             border-radius: 20px; 
             cursor: pointer; 
             font-size: 14px; 
@@ -165,7 +167,7 @@
             transition: all 0.2s ease; 
         }
         .action-btn:hover { background: var(--btn-hover); color: var(--fg); }
-        .action-btn.active { background: linear-gradient(135deg, var(--brand-1), var(--brand-2)); color: var(--fg); }
+        .action-btn.active { background: linear-gradient(135deg, var(--brand-1-deep), var(--brand-2)); color: var(--fg); }
 
         /* 多选：已选数量角标 + 一键清空 */
         .sel-badge {
@@ -184,7 +186,7 @@
         
         /* 标题行选择按钮 */
         #selectModeBtn { 
-            background: linear-gradient(135deg, var(--brand-1), var(--brand-2)); 
+            background: linear-gradient(135deg, var(--brand-1-deep), var(--brand-2)); 
             color: var(--fg);
         }
         #selectModeBtn:hover { transform: scale(1.05); }
@@ -223,13 +225,15 @@
         .photo-item img { width: 100%; height: 100%; object-fit: cover; image-rendering: -webkit-optimize-contrast; }
         .photo-item.selected { outline: 3px solid var(--brand-1); z-index: 10; }
         .photo-item.selected::after {
-            content: '✓';
+            content: '';
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7'/%3E%3C/svg%3E");
+            background-size: 19px 19px; background-position: center; background-repeat: no-repeat;
             position: absolute;
             top: 10px;
             right: 10px;
             width: 30px;
             height: 30px;
-            background: var(--brand-1);
+            background-color: var(--brand-1);
             border-radius: 50%;
             display: flex;
             align-items: center;
@@ -238,29 +242,42 @@
             font-weight: bold;
             z-index: 20;
         }
+        /* 视频格子的角标容器：只负责把时长角标摆到右下角，本身不铺任何底色
+           （既不留整片黑，也不留底部渐变 —— 缩略图完全原样显示） */
         .video-overlay {
             position: absolute;
             top: 0; left: 0;
             width: 100%;
             height: 100%;
-            background: var(--veil);
             display: flex;
-            align-items: center;
-            justify-content: center;
+            align-items: flex-end;
+            justify-content: flex-end;
+            padding: 6px;
             pointer-events: none;
         }
         .play-indicator {
-            width: 40px;
-            height: 40px;
+            width: 34px;
+            height: 34px;
             background: var(--w-90);
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 18px;
+            font-size: 15px;
             color: var(--bg-page);
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
         }
-        .play-indicator::before { content: '▶'; margin-left: 3px; }
+        /* 视频格子的右下角时长角标：既能一眼看出是视频，又能直接看到片长 */
+        .video-duration {
+            padding: 1px 5px;
+            border-radius: 4px;
+            background: rgba(0, 0, 0, 0.72);
+            color: #fff;
+            font-size: 11px;
+            line-height: 15px;
+            font-variant-numeric: tabular-nums;
+            pointer-events: none;
+        }
         .lightbox { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--scrim-lightbox); display: none; justify-content: center; align-items: center; z-index: 1000; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
         .lightbox.active { display: flex; }
         .lightbox-content { position: relative; width: 95vw; height: 90vh; display: flex; align-items: center; justify-content: center; background: var(--bg-solid); }
@@ -497,7 +514,7 @@
             box-shadow: 0 12px 32px rgba(0,0,0,0.55);
             color: var(--fg-2); z-index: 3200;
             opacity: 0; pointer-events: none;
-            transition: transform .28s cubic-bezier(.2,.9,.3,1.2), opacity .28s ease;
+            transition: transform .28s cubic-bezier(.2,.9,.3,1), opacity .28s ease;
         }
         .err-toast.show { transform: translate(-50%, 0); opacity: 1; pointer-events: auto; }
         .err-toast .err-icon { font-size: 20px; line-height: 1.3; flex-shrink: 0; }
@@ -532,7 +549,7 @@
         }
         .confirm-btn.ghost { background: var(--btn); color: var(--fg-2); }
         .confirm-btn.ghost:hover { background: var(--btn-hover); color: var(--fg); }
-        .confirm-btn.danger { background: linear-gradient(135deg, var(--danger-1), var(--danger-2)); color: var(--fg); }
+        .confirm-btn.danger { background: linear-gradient(135deg, var(--danger-2), var(--danger-dark)); color: var(--fg); }
         .confirm-btn.danger:hover { filter: brightness(1.12); }
 
         .select-hint { background: var(--brand-tint); padding: 8px 16px; border-radius: 20px; font-size: 14px; }
@@ -540,13 +557,14 @@
         @keyframes spin { to { transform: rotate(360deg); } }
         @media (max-width: 1400px) { .photo-grid { grid-template-columns: repeat(7, 1fr); } }
         @media (max-width: 1200px) { .photo-grid { grid-template-columns: repeat(6, 1fr); } }
-        @media (max-width: 900px) { .photo-grid { grid-template-columns: repeat(5, 1fr); } .play-indicator { width: 32px; height: 32px; } }
+        @media (max-width: 900px) { .photo-grid { grid-template-columns: repeat(5, 1fr); } .play-indicator { width: 30px; height: 30px; font-size: 14px; } }
         @media (max-width: 600px) { 
             .photo-grid { grid-template-columns: repeat(4, 1fr); } 
             :root { --grid-radius: 4px; --pad-top: 15px; }
             .filter-btn { padding: 8px 16px; font-size: 14px; } 
             .action-btn { padding: 8px 16px; font-size: 14px; }
-            .play-indicator { width: 28px; height: 28px; font-size: 14px; } 
+            .play-indicator { width: 26px; height: 26px; font-size: 13px; }
+            .video-duration { font-size: 10px; line-height: 13px; padding: 0 4px; border-radius: 3px; } 
             .lightbox-close { width: 45px; height: 45px; font-size: 26px; top: 15px; right: 15px; }
             .lightbox-nav { width: 55px; height: 55px; font-size: 28px; }
             .lightbox-nav.prev { left: 10px; }
@@ -554,6 +572,34 @@
             .container { padding: 15px; }
             .header { gap: 10px; }
         }
+        /* ===== 触屏：顶栏与筛选栏的控制也做到"手指够用"（44px）=====
+           实测手机(390px 宽)：筛选档与操作按钮只有 36px 高、顶栏按钮 33px，
+           低于触控舒适下限。桌面鼠标端尺寸完全不变——这条只在小屏或粗指针生效。 */
+        @media (max-width: 900px), (hover: none) and (pointer: coarse) {
+            .filter-btn, .action-btn {
+                min-height: 44px; white-space: nowrap;
+                display: inline-flex; align-items: center; justify-content: center;
+            }
+            /* 右下角删除键：JS 会给它写行内 display:block（覆盖 flex），所以用行高居中
+               （44 - 上下内边距 8×2 = 28），否则文字会贴在 44px 框的偏上方 */
+            #deleteBtn { min-height: 44px; line-height: 28px; white-space: nowrap; }
+            .topbar-btn { min-height: 44px; display: inline-flex; align-items: center; }
+            .sel-clear { min-height: 36px; display: inline-flex; align-items: center; }
+            /* 下载悬浮卡是高密度控制台：微按钮只放大到不误点为止，不撑成 44px */
+            .dl-stop-btn { min-height: 32px; padding: 6px 12px; }
+            .dl-cancel-btn { min-height: 30px; padding: 5px 12px; }
+            .modal-close { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+            .install-btn { min-height: 44px; display: inline-flex; align-items: center; }
+        }
+
+        /* ===== 键盘焦点可见 =====
+           鼠标点击不出现（:focus-visible 语义），Tab 到按钮时才出现品牌色描边环，
+           避免电脑端键盘操作"看不见焦点在哪"。 */
+        button:focus-visible, [role="button"]:focus-visible {
+            outline: 2px solid var(--brand-soft);
+            outline-offset: 2px;
+        }
+
         /* ================= TG Station 整合 UI ================= */
         .station-topbar {
             flex-basis: 100%; height: 52px;
@@ -566,10 +612,10 @@
         /* 页面版本标识：用于快速判断浏览器加载的是新版还是缓存旧版。
            数字 = 本文件大小(KB) + 内联脚本总字节数，改一次就变一次。 */
         .build-stamp {
-            font-size: 10.5px; font-weight: 500; color: var(--fg-6);
+            font-size: 10.5px; font-weight: 500; color: var(--fg-4);
             margin-left: 6px; letter-spacing: 0.2px; cursor: help;
         }
-        .topbar-status { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--fg-3); flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+        .topbar-status { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--fg-3); flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
         .status-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--fg-7); flex-shrink: 0; }
         .status-dot.on { background: var(--ok); box-shadow: 0 0 8px var(--ok-glow); }
         .status-dot.off { background: var(--danger); }
@@ -577,11 +623,11 @@
         .topbar-actions { display: flex; gap: 8px; }
         .topbar-btn {
             padding: 7px 14px; background: var(--btn); border: none; color: var(--fg-2);
-            border-radius: 16px; cursor: pointer; font-size: 13px; font-weight: 600;
+            border-radius: 16px; cursor: pointer; font-size: 13px; font-weight: 600; white-space: nowrap;
             transition: all 0.2s ease;
         }
         .topbar-btn:hover { background: var(--btn-hover); color: var(--fg); }
-        .topbar-btn.primary { background: linear-gradient(135deg, var(--brand-1), var(--brand-2)); color: var(--fg); }
+        .topbar-btn.primary { background: linear-gradient(135deg, var(--brand-1-deep), var(--brand-2)); color: var(--fg); }
         .topbar-btn.primary:hover { filter: brightness(1.15); }
 
         /* ===== 下载进度面板 =====
@@ -622,7 +668,7 @@
             background: var(--danger-dark); color: var(--fg); border: none; border-radius: 6px;
             font-size: 11px; padding: 3px 10px; cursor: pointer; font-weight: 600;
         }
-        .dl-stop-btn:hover { background: var(--danger); }
+        \.dl-stop-btn:hover { background: var(--danger-2); }
         .dl-task-actions { display: flex; justify-content: flex-end; margin-top: 2px; }
         .dl-cancel-btn {
             background: transparent; color: var(--danger-soft); border: 1px solid var(--danger-soft);
@@ -778,18 +824,45 @@
             .topbar-title { font-size: 14px; }
             .topbar-status { font-size: 12px; }
         }
+        /* ===== 手机端（≤600px）顶栏重排：两行，按钮 44px，状态文字可见 =====
+           必须放在样式表末尾：顶栏的基础规则定义在文件后半段，只有靠源顺序才能覆盖
+           （放在中间会被后面的基础 height:52px 压掉，内容反而溢出圆角外框）。
+           实测 390px 宽：标题(nowrap)+操作按钮需要 362px，而内容盒只有 326px →
+           按钮横向溢出外框 20px、状态文字被 flex 压成 0 宽（"未运行/监听中" 在手机上
+           完全看不见，只剩悬浮球上的小圆点）。现在：第一行 标题 + 状态（长则省略号），
+           第二行 两个操作按钮平分整行。 */
+        @media (max-width: 600px) {
+            .station-topbar { height: auto; min-height: 52px; flex-wrap: wrap; padding: 8px 12px; gap: 6px 10px; }
+            .topbar-status { font-size: 12px; }
+            .topbar-actions { flex: 1 1 100%; }
+            .topbar-actions .topbar-btn { flex: 1; padding: 7px 10px; }
+            /* 顶栏多一行，把筛选排与它的间距收紧抵回来 */
+            .header { gap: 10px; margin-bottom: 12px; }
+        }
+        /* ===== 图标系统（手绘一套，2026-10-10 用户拍板方向）=====
+           24×24 视框、2px 描边、圆头圆角、currentColor 上色；尺寸用 em 跟随所在
+           文字大小（.ic = 1.05em），所以同一套图标在 13px 顶栏按钮与 28px 灯箱
+           圆钮里都自动成比例。图标是"画出来的"，不再用 emoji/文字字形顶替。
+           ic-solo = 独居按钮内（关闭/翻页/删除/全屏），去掉与文字之间的间距。 */
+        .ic { width: 1.05em; height: 1.05em; flex: none; vertical-align: -0.16em;
+              margin-right: .34em; fill: none; stroke: currentColor; stroke-width: 2;
+              stroke-linecap: round; stroke-linejoin: round; }
+        .ic-solo { margin-right: 0; }
+        /* 视频格子上的播放圆钮：白底 + 深色三角（承重图形，单独放大一点） */
+        .play-indicator .ic { width: 15px; height: 15px; margin-right: 0; vertical-align: 0; stroke-width: 2.4; }
+
     </style>
 </head>
 <body>
     <!-- ===== TG Station 悬浮球 ===== -->
     <div class="station-fab" id="stationFab" title="TG Station 快捷菜单">
         <span class="fab-dot off" id="fabDot"></span>
-        <span class="fab-icon" id="fabIcon">▶</span>
+        <span class="fab-icon" id="fabIcon"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 5v14l11-7z"/></svg></span>
     </div>
     <div class="fab-menu" id="fabMenu" style="display:none;">
-        <button class="fab-menu-item" id="fabToggleBtn">▶ 开始监听</button>
-        <button class="fab-menu-item" id="fabRefreshBtn">🔄 刷新媒体</button>
-        <button class="fab-menu-item" id="fabSettingsBtn">⚙️ 设置</button>
+        <button class="fab-menu-item" id="fabToggleBtn"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 5v14l11-7z"/></svg>开始监听</button>
+        <button class="fab-menu-item" id="fabRefreshBtn"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 12a8.5 8.5 0 1 1-2.7-6.2"/><path d="M20.8 4.2v4.2h-4.2"/></svg>刷新媒体</button>
+        <button class="fab-menu-item" id="fabSettingsBtn"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h8M16.5 7.5H20M4 16.5h3.5M12 16.5H20"/><circle cx="14.6" cy="7.5" r="2.2"/><circle cx="9.8" cy="16.5" r="2.2"/></svg>设置</button>
     </div>
     <!-- 删除按钮：body 层级 fixed 右下角（放 header 外，避免 header 的 backdrop-filter 破坏 fixed 定位） -->
     <button class="action-btn delete" id="deleteBtn" style="display:none;">删除</button>
@@ -798,13 +871,13 @@
     <div class="modal-overlay" id="settingsModal" style="display:none;">
         <div class="modal">
             <div class="modal-header">
-                <span>⚙️ 设置</span>
-                <button class="modal-close" id="settingsCloseBtn">×</button>
+                <span><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h8M16.5 7.5H20M4 16.5h3.5M12 16.5H20"/><circle cx="14.6" cy="7.5" r="2.2"/><circle cx="9.8" cy="16.5" r="2.2"/></svg>设置</span>
+                <button class="modal-close" id="settingsCloseBtn" aria-label="关闭"><svg class="ic ic-solo" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></button>
             </div>
             <div class="modal-body" id="settingsBody"></div>
             <div class="modal-footer">
                 <span id="settingsMsg" class="modal-msg"></span>
-                <button class="topbar-btn primary" id="saveSettingsBtn">💾 保存设置</button>
+                <button class="topbar-btn primary" id="saveSettingsBtn"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 20.5H5A1.5 1.5 0 0 1 3.5 19V5A1.5 1.5 0 0 1 5 3.5h11L20.5 8v11a1.5 1.5 0 0 1-1.5 1.5z"/><path d="M17 20.5v-7H7v7"/><path d="M7 3.5v5h7"/></svg>保存设置</button>
             </div>
         </div>
     </div>
@@ -813,12 +886,12 @@
 
     <!-- 错误弹窗：替代原生 alert（原生弹窗会冻结整个页面，且样式与界面不搭） -->
     <div class="err-toast" id="errToast" role="alert" aria-live="assertive">
-        <div class="err-icon">⚠️</div>
+        <div class="err-icon"><svg class="ic ic-solo" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.2L21 19.8H3z"/><path d="M12 10v4.2"/><path d="M12 17.2h.01"/></svg></div>
         <div class="err-text">
             <div class="err-title" id="errTitle">操作失败</div>
             <div class="err-msg" id="errMsg"></div>
         </div>
-        <button class="err-close" id="errClose" aria-label="关闭">×</button>
+        <button class="err-close" id="errClose" aria-label="关闭"><svg class="ic ic-solo" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></button>
     </div>
 
     <!-- 确认弹窗：替代原生 confirm（原生弹窗冻结页面，且移动端体验差） -->
@@ -835,14 +908,14 @@
 
     <div class="install-banner" id="installBanner">
         <div class="install-banner-content">
-            <div class="install-icon">📸</div>
+            <div class="install-icon"><svg class="ic ic-solo" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="3.5" width="10" height="17" rx="2.5"/><path d="M11 17.4h2"/></svg></div>
             <div class="install-text">
                 <h3>安装到主屏幕</h3>
                 <p>像APP一样使用媒体浏览器</p>
             </div>
         </div>
         <button class="install-btn" id="installBtn">安装</button>
-        <button class="install-close" id="installClose">×</button>
+        <button class="install-close" id="installClose" aria-label="关闭"><svg class="ic ic-solo" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></button>
     </div>
     
     <div class="container" id="mainContainer" style="display:none;">
@@ -851,43 +924,43 @@
                 <button class="filter-btn active" data-filter="all">全部</button>
                 <button class="filter-btn" data-filter="photo">照片</button>
                 <button class="filter-btn" data-filter="video">视频</button>
-                <button class="filter-btn movie-entry" data-filter="movie">🎬 影视</button>
+                <button class="filter-btn movie-entry" data-filter="movie"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M10.4 9.5v5l4-2.5z"/></svg>影视</button>
             </div>
             <div class="action-btns">
                 <span class="sel-badge" id="selBadge" style="display:none;">点选或滑动选择</span>
-                <button class="sel-clear" id="selClearBtn" style="display:none;">✕ 清空</button>
+                <button class="sel-clear" id="selClearBtn" style="display:none;"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>清空</button>
                 <button class="action-btn" id="selectModeBtn">选择</button>
                 <button class="action-btn" id="selectAllBtn" style="display:none;">全选</button>
             </div>
         </div>
         <!-- ===== TG Station 控制栏（照片标题下方） ===== -->
         <div class="station-topbar" id="stationTopbar">
-            <div class="topbar-title">🎛️ TG Station<span class="build-stamp" id="buildStamp" title="页面版本；若与部署版本不一致说明是浏览器缓存">…</span></div>
+            <div class="topbar-title">TG Station<span class="build-stamp" id="buildStamp" title="页面版本；若与部署版本不一致说明是浏览器缓存">…</span></div>
             <div class="topbar-status">
                 <span class="status-dot off" id="stationDot"></span>
                 <span id="stationStatusText">后端离线</span>
             </div>
             <div class="topbar-actions">
-                <button class="topbar-btn" id="listenToggleBtn">▶ 开始监听</button>
-                <button class="topbar-btn" id="settingsBtn">⚙️ 设置</button>
+                <button class="topbar-btn" id="listenToggleBtn"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 5v14l11-7z"/></svg>开始监听</button>
+                <button class="topbar-btn" id="settingsBtn"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h8M16.5 7.5H20M4 16.5h3.5M12 16.5H20"/><circle cx="14.6" cy="7.5" r="2.2"/><circle cx="9.8" cy="16.5" r="2.2"/></svg>设置</button>
             </div>
         </div>
         <div class="download-panel" id="downloadPanel">
             <div class="dl-header" id="dlHeader">
-                <span>⬇️ 下载进度</span>
+                <span><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v10.5M7.5 10L12 14.5 16.5 10"/><path d="M5 19.5h14"/></svg>下载进度</span>
                 <span class="dl-summary" id="dlSummary"></span>
-                <button class="dl-stop-btn" id="dlStopBtn" title="停止下载（终止当前下载任务，已下载文件保留）">⏹ 停止</button>
-                <span class="dl-arrow" id="dlArrow">▸</span>
+                <button class="dl-stop-btn" id="dlStopBtn" title="停止下载（终止当前下载任务，已下载文件保留）"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>停止</button>
+                <span class="dl-arrow" id="dlArrow"><svg class="ic ic-solo" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 5.5l6.5 6.5-6.5 6.5"/></svg></span>
             </div>
             <!-- 总进度 / 速度 / 剩余时间 -->
             <div class="dl-meta" id="dlMeta" style="display:none">
                 <div class="dl-overall-bar"><div class="dl-overall-fill" id="dlOverallFill" style="width:0%"></div></div>
                 <div class="dl-meta-row"><span>总进度 <b id="dlCount">0 / 0</b></span><span><b id="dlSpeed">—</b> · 剩余 <b id="dlEta">—</b></span></div>
             </div>
-            <div class="dl-done" id="dlDone" style="display:none">✅ 全部完成</div>
+            <div class="dl-done" id="dlDone" style="display:none"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg>全部完成</div>
             <div class="dl-body" id="dlBody" style="display:none">
                 <div id="dlTasks"></div>
-                <div class="dl-recent-title" id="dlRecentTitle" style="display:none">🕘 最近下载</div>
+                <div class="dl-recent-title" id="dlRecentTitle" style="display:none"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 7.6V12l3.6 2"/></svg>最近下载</div>
                 <div class="dl-recent" id="dlRecent"></div>
             </div>
         </div>
@@ -897,15 +970,49 @@
         <!-- 桌面端边缘热区：鼠标滑到两侧才显示翻页键 -->
         <div class="nav-hotzone prev" id="navZonePrev"></div>
         <div class="nav-hotzone next" id="navZoneNext"></div>
-        <div class="lightbox-close" id="lightboxCloseBtn">×</div>
-        <div class="lightbox-nav prev" id="navPrev">‹</div>
+        <div class="lightbox-close" id="lightboxCloseBtn" role="button" aria-label="关闭"><svg class="ic ic-solo" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></div>
+        <div class="lightbox-nav prev" id="navPrev" role="button" aria-label="上一张"><svg class="ic ic-solo" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5L8 12l6.5 6.5"/></svg></div>
         <div class="lightbox-content" id="lightboxContent"></div>
-        <div class="lightbox-nav next" id="navNext">›</div>
+        <div class="lightbox-nav next" id="navNext" role="button" aria-label="下一张"><svg class="ic ic-solo" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 5.5l6.5 6.5-6.5 6.5"/></svg></div>
         <div class="lightbox-counter" id="lightboxCounter"></div>
-        <div class="lightbox-delete" id="lightboxDeleteBtn" title="删除此图片">🗑️</div>
+        <div class="lightbox-delete" id="lightboxDeleteBtn" title="删除此图片" role="button" aria-label="删除"><svg class="ic ic-solo" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 7h15"/><path d="M9.5 7V4.6h5V7"/><path d="M6.8 7l1 12.4h8.4L17.2 7"/><path d="M10.4 10.6v5.6M13.6 10.6v5.6"/></svg></div>
     </div>
-    <div class="delete-toast" id="deleteToast">✅ 删除成功！</div>
+    <div class="delete-toast" id="deleteToast"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg>删除成功</div>
     <script>
+        // ===== 图标系统：路径唯一真源（静态 HTML 里是同一份路径的展开形态）=====
+        const ICON_PATHS = {
+            play: '<path d="M7.5 5v14l11-7z"/>',
+            square: '<rect x="7" y="7" width="10" height="10" rx="2"/>',
+            x: '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',
+            check: '<path d="M5 12.5l4.5 4.5L19 7"/>',
+            chevron_l: '<path d="M14.5 5.5L8 12l6.5 6.5"/>',
+            chevron_r: '<path d="M9.5 5.5l6.5 6.5-6.5 6.5"/>',
+            download: '<path d="M12 4v10.5M7.5 10L12 14.5 16.5 10"/><path d="M5 19.5h14"/>',
+            clock: '<circle cx="12" cy="12" r="8"/><path d="M12 7.6V12l3.6 2"/>',
+            smartphone: '<rect x="7" y="3.5" width="10" height="17" rx="2.5"/><path d="M11 17.4h2"/>',
+            image: '<rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="9" cy="10.2" r="1.6"/><path d="M5.6 17.8l3.7-3.7 3.2 3.2 3.4-3.4 2.5 2.5"/>',
+            video: '<rect x="4" y="5" width="16" height="14" rx="2"/><path d="M10.4 9.5v5l4-2.5z"/>',
+            save: '<path d="M19 20.5H5A1.5 1.5 0 0 1 3.5 19V5A1.5 1.5 0 0 1 5 3.5h11L20.5 8v11a1.5 1.5 0 0 1-1.5 1.5z"/><path d="M17 20.5v-7H7v7"/><path d="M7 3.5v5h7"/>',
+            refresh: '<path d="M20.5 12a8.5 8.5 0 1 1-2.7-6.2"/><path d="M20.8 4.2v4.2h-4.2"/>',
+            trash: '<path d="M4.5 7h15"/><path d="M9.5 7V4.6h5V7"/><path d="M6.8 7l1 12.4h8.4L17.2 7"/><path d="M10.4 10.6v5.6M13.6 10.6v5.6"/>',
+            settings: '<path d="M4 7.5h8M16.5 7.5H20M4 16.5h3.5M12 16.5H20"/><circle cx="14.6" cy="7.5" r="2.2"/><circle cx="9.8" cy="16.5" r="2.2"/>',
+            maximize: '<path d="M4 9.5V6a2 2 0 0 1 2-2h3.5"/><path d="M14.5 4H18a2 2 0 0 1 2 2v3.5"/><path d="M20 14.5V18a2 2 0 0 1-2 2h-3.5"/><path d="M9.5 20H6a2 2 0 0 1-2-2v-3.5"/>',
+            minimize: '<path d="M9.5 4v3.5a2 2 0 0 1-2 2H4"/><path d="M20 9.5h-3.5a2 2 0 0 1-2-2V4"/><path d="M14.5 20v-3.5a2 2 0 0 1 2-2H20"/><path d="M4 14.5h3.5a2 2 0 0 1 2 2V20"/>',
+            list: '<path d="M4 7h16M4 12h16M4 17h16"/>',
+            alert: '<path d="M12 4.2L21 19.8H3z"/><path d="M12 10v4.2"/><path d="M12 17.2h.01"/>',
+        };
+        function ic(name, solo) {
+            const p = ICON_PATHS[name] || '';
+            return '<svg class="ic' + (solo ? ' ic-solo' : '') + '" viewBox="0 0 24 24" aria-hidden="true">' + p + '</svg>';
+        }
+        // 用 DOM 拼"图标 + 文字"，避免把服务端返回的文本塞进 innerHTML
+        function setIconText(el, name, label) {
+            if (!el) return;
+            el.textContent = '';
+            if (name) el.insertAdjacentHTML('afterbegin', ic(name));
+            if (label) el.appendChild(document.createTextNode(label));
+        }
+
         let videoGen = 0;  // 视频代际计数器，防止僵尸音频
         let deferredPrompt;
         let allMedia = [], filteredMedia = [], currentIndex = 0, currentFilter = 'all';
@@ -1091,40 +1198,237 @@
             else filteredMedia = allMedia.filter(m => m.isVideo);
         }
         
+        // ── 日期分区「离屏回收」（第三阶段优化）──────────────────────
+        // 全量渲染时 16882 个格子常驻 DOM（十几万节点），内存与每次操作都偏重。
+        // 这里在分区级别回收：远离视口的分区把格子清掉、只留高度占位，
+        // 滚回来时按原 data-index 原样重建 —— 滚动条长度与格子位置都不变。
+        const RECYCLE_MARGIN_PX = 2500;   // 视口外这么远才开始回收（留足缓冲，滚动不闪）
+        // 同一天超过这么多格就切成多个网格块（840 = 4/5/6/7/8 列的公倍数，
+        // 任何列数下都正好整行收尾，视觉上仍然是一片连续的网格）
+        const GRID_BLOCK = 840;
+
+        // 回收时留的占位高度必须准，否则滚动条长度会变、位置会漂。
+        // 用 rect 测量会被 content-visibility: auto 影响（离屏格子按 contain-intrinsic-size
+        // 估算，不是真实高度），所以这里按「列数 × 格子高（aspect-ratio）＋行间距」算出来。
+        let gridMetricsCache = null;
+        function gridMetrics() {
+            if (gridMetricsCache) return gridMetricsCache;
+            const g = document.querySelector('#content .photo-grid');
+            if (!g) return null;
+            const cs = getComputedStyle(g);
+            const cols = (cs.gridTemplateColumns || '').split(' ').filter(s => s && s !== 'none').length || 1;
+            const colGap = parseFloat(cs.columnGap) || 0;
+            const rowGap = parseFloat(cs.rowGap) || 0;
+            const avail = g.clientWidth;
+            if (!(avail > 0)) return null;
+            const cellW = (avail - colGap * (cols - 1)) / cols;
+            let ratio = 1;
+            const el = g.firstElementChild;
+            if (el) {
+                const parts = (getComputedStyle(el).aspectRatio || '').split('/').map(s => parseFloat(s.trim()));
+                if (parts.length === 2 && parts[0] > 0 && parts[1] > 0) ratio = parts[1] / parts[0];
+            }
+            gridMetricsCache = { cols, colGap, rowGap, cellW, ratio };
+            return gridMetricsCache;
+        }
+        function heightForCount(count) {
+            const m = gridMetrics();
+            if (!m || !(count > 0)) return 0;
+            const rows = Math.ceil(count / m.cols);
+            return Math.round(rows * m.cellW * m.ratio + (rows - 1) * m.rowGap);
+        }
+
+        // 用滚动位置直接判断，不用 IntersectionObserver：
+        // IO 在页面不可见（后台标签/最小化）时不回调，行为依赖可见性；
+        // 几何判断只依赖位置，任何时候都一致，也便于自动化验证。
+        // 注意：先把所有 rect 读出来再统一写 DOM，避免「读-写交替」反复触发布局。
+        // 粒度是「网格块」而不是整个日期分区。
+        function updateSectionRecycle() {
+            const margin = RECYCLE_MARGIN_PX;
+            const vh = window.innerHeight || 800;
+            const plan = [];
+            document.querySelectorAll('#content .photo-grid').forEach(grid => {
+                const r = grid.getBoundingClientRect();
+                const near = (r.bottom > -margin) && (r.top < vh + margin);
+                const n = grid.dataset.count !== undefined ? parseInt(grid.dataset.count, 10) : grid.children.length;
+                plan.push([grid, near, heightForCount(n) || Math.round(r.height)]);
+            });
+            plan.forEach(p => { if (p[1]) restoreGrid(p[0]); else recycleGrid(p[0], p[2]); });
+        }
+
+        let recycleScrollTimer = null;
+        window.addEventListener('scroll', () => {
+            if (recycleScrollTimer) return;
+            recycleScrollTimer = setTimeout(() => {
+                recycleScrollTimer = null;
+                updateSectionRecycle();
+            }, 180);
+        }, { passive: true });
+
+        function recycleGrid(grid, knownHeight) {
+            if (!grid || grid.dataset.recycled === '1' || !grid.children.length) return;
+            const first = grid.firstElementChild;
+            if (!first) return;
+            const h = (knownHeight && knownHeight > 0) ? knownHeight : (heightForCount(grid.children.length) || Math.round(grid.getBoundingClientRect().height));
+            grid.dataset.start = first.dataset.index;                 // 全局索引，恢复时用它
+            grid.dataset.count = String(grid.children.length);
+            grid.dataset.h = String(h);
+            grid.innerHTML = '';
+            grid.style.height = h + 'px';                             // 占位，保持滚动条长度
+            grid.dataset.recycled = '1';
+            delete grid.dataset.restoreToken;                         // 作废在途的逐帧恢复
+        }
+
+        // 大分区（实测有个日期 1.2 万个文件）一次性重建会阻塞主线程约 0.3 秒；
+        // 这里改成逐帧插入（每帧最多 RESTORE_CHUNK 格），视觉上仍是立刻出现，
+        // 但主线程不会被长时间占住 —— 「拖到某处突然一顿」的主要原因。
+        // 块大小 840 → 每帧就能重建一整块（逐帧保护仅对将来更大的块生效）
+        const RESTORE_CHUNK = 1000;
+        let gridEpoch = 0;   // 版本号：删除等需要完整 DOM 的操作会让在途恢复作废
+
+        // 作废所有在途的逐帧恢复，并把它们标记回「已回收」交给随后的同步恢复处理
+        function cancelPendingRestores() {
+            gridEpoch++;
+            document.querySelectorAll('#content .photo-grid[data-restore-token]').forEach(g => {
+                g.dataset.recycled = '1';
+                delete g.dataset.restoreToken;
+            });
+        }
+
+        function restoreGrid(grid, sync) {
+            if (!grid || grid.dataset.recycled !== '1') return;
+            const start = parseInt(grid.dataset.start, 10);
+            const count = parseInt(grid.dataset.count, 10);
+            if (!(start >= 0) || !(count > 0)) {
+                grid.style.height = '';
+                delete grid.dataset.recycled;
+                return;
+            }
+
+            if (sync) {   // 需要立刻有完整 DOM（删除增量同步/窗口变化）
+                grid.innerHTML = sectionItemsHTML(filteredMedia.slice(start, start + count), start);
+                grid.style.height = '';
+                delete grid.dataset.recycled;
+                delete grid.dataset.start; delete grid.dataset.count; delete grid.dataset.h;
+                return;
+            }
+
+            const myEpoch = gridEpoch;
+            const token = String(myEpoch) + '-' + Math.random();
+            grid.dataset.recycled = '0';          // 恢复中（保留 start/count 以便中途再次回收）
+            grid.dataset.restoreToken = token;
+            grid.innerHTML = '';
+            let k = 0;
+            const step = () => {
+                // 期间被回收 / 被取消 / 版本变了 → 放弃本次恢复
+                if (myEpoch !== gridEpoch || grid.dataset.restoreToken !== token) return;
+                // 必须按本块的大小截断：否则 RESTORE_CHUNK 大于块大小时会把相邻块的条目
+                // 也塞进来，块会越恢复越大（高度变多、渲染量变多）
+                const chunk = filteredMedia.slice(start + k, Math.min(start + k + RESTORE_CHUNK, start + count));
+                if (chunk.length) grid.insertAdjacentHTML('beforeend', sectionItemsHTML(chunk, start + k));
+                k += RESTORE_CHUNK;
+                if (k < count) { requestAnimationFrame(step); return; }
+                grid.style.height = '';
+                delete grid.dataset.recycled;
+                delete grid.dataset.restoreToken;
+                delete grid.dataset.start; delete grid.dataset.count; delete grid.dataset.h;
+            };
+            step();
+        }
+
+        // render() 之后调用：按当前滚动位置立刻回收远处分区
+        function observeSections() {
+            updateSectionRecycle();
+        }
+
+        // 需要「完整 DOM」的时刻（删除增量同步、窗口尺寸变化）用 sync=true 立即恢复；
+        // 普通滚动恢复走逐帧，避免长任务。
+        function restoreAllRecycledSections(sync) {
+            cancelPendingRestores();
+            document.querySelectorAll('#content .photo-grid[data-recycled="1"]').forEach(grid => restoreGrid(grid, sync));
+        }
+
+        // 找到包含第 idx 个条目的分区：
+        // 分区按文档顺序排列，与 filteredMedia 顺序一致；累加每个分区的条目数即可。
+        // 已回收的分区保留 data-count（回收瞬间写入），未回收的直接读子元素个数。
+        function sectionForIndex(idx) {
+            let acc = 0;
+            const grids = document.querySelectorAll('#content .photo-grid');
+            for (const g of grids) {
+                const cnt = g.dataset.count !== undefined ? parseInt(g.dataset.count, 10) : g.children.length;
+                if (!(cnt > 0)) continue;
+                if (idx < acc + cnt) return g.closest('.date-section');
+                acc += cnt;
+            }
+            return grids.length ? grids[grids.length - 1].closest('.date-section') : null;
+        }
+
+        // 列数随窗口宽度变化 → 回收时记录的高度占位失效，先恢复再由观察器按新布局回收
+        let recycleResizeTimer = null;
+        window.addEventListener('resize', () => {
+            clearTimeout(recycleResizeTimer);
+            recycleResizeTimer = setTimeout(() => {
+                gridMetricsCache = null;         // 列数/列宽变了，占位高度要按新布局重算
+                restoreAllRecycledSections(true);
+                observeSections();
+            }, 300);
+        });
+
+        // 视频时长角标文本（灯箱里的 fmt() 定义在另一个作用域，网格渲染拿不到，
+        // 之前直接调 fmt() 会抛 ReferenceError 让整个列表渲染不出来）
+        function durText(sec) {
+            const s = Math.max(0, Math.round(sec || 0));
+            if (!s) return '';
+            const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
+            return h > 0 ? h + ':' + (m < 10 ? '0' : '') + m + ':' + (ss < 10 ? '0' : '') + ss
+                         : m + ':' + (ss < 10 ? '0' : '') + ss;
+        }
+
         function render() {
             if (filteredMedia.length === 0) {
                 document.getElementById('content').innerHTML = '<div class="empty-tip">' + (currentFilter === 'movie'
-                    ? '🎬 暂无时长超过 ' + movieMinMinutes() + ' 分钟的视频'
+                    ? ic('video') + '暂无时长超过 ' + movieMinMinutes() + ' 分钟的视频'
                     : '暂无内容') + '</div>';
                 return;
             }
-            let html = '', currentDate = '';
+            let html = '', currentDate = '', dateCount = 0;
             filteredMedia.forEach((item, i) => {
                 if (item.date !== currentDate) {
                     if (currentDate) html += '</div></div>';
                     currentDate = item.date;
+                    dateCount = 0;
                     let dateHtml = '<div class="date-section"><div class="date-header">' + currentDate;
                     if (selectMode) {
                         dateHtml += '<span class="select-hint">点击选择 | 已选 ' + selectedFiles.size + ' 个</span>';
                     }
                     dateHtml += '</div><div class="photo-grid">';
                     html += dateHtml;
+                } else if (dateCount > 0 && dateCount % GRID_BLOCK === 0) {
+                    // 同一天条目太多时切成多个网格块（块大小是 4~8 列的整数倍，视觉上仍是
+                    // 连续的一片）：回收/恢复就能按块来，滚到某一天中间时只需重建一块，
+                    // 而不是整天 1 万多个格子一起重建。
+                    html += '</div><div class="photo-grid">';
                 }
+                dateCount++;
                 const thumbUrl = safePath(item.path);
                 const encodedPath = encodeURIComponent(item.path);
                 const isSelected = selectedFiles.has(item.path);
                 const selectedClass = isSelected ? ' selected' : '';
                 if (item.isVideo) {
                     html += '<div class="photo-item' + selectedClass + '" data-index="' + i + '" data-path="' + encodeURIComponent(item.path) + '">';
-                    html += '<img src="/thumb/' + thumbUrl + '" loading="lazy" onerror="this.src=\'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22200%22><rect fill=%22%23333%22 width=%22200%22 height=%22200%22/><text x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23888%22 font-size=%2230%22>▶</text></svg>\'">';
-                    html += '<div class="video-overlay"><div class="play-indicator"></div></div>';
+                    html += '<img src="/thumb/' + thumbUrl + '?s=' + (item.size || 0) + '" loading="lazy" onerror="this.src=\'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22200%22><rect fill=%22%23333%22 width=%22200%22 height=%22200%22/><path d=%22M80 60 L142 100 L80 140 Z%22 fill=%22%23888%22 stroke=%22%23888%22 stroke-width=%2212%22 stroke-linejoin=%22round%22/></svg>\'">';
+                    html += '<div class="video-overlay">' + (item.duration > 0 ? '<span class="video-duration">' + durText(item.duration) + '</span>' : '') + '</div>';
                     html += '</div>';
                 } else {
-                    html += '<div class="photo-item' + selectedClass + '" data-index="' + i + '" data-path="' + encodeURIComponent(item.path) + '"><img src="/thumb/' + thumbUrl + '" loading="lazy" onerror="this.src=\'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22200%22><rect fill=%22%23333%22 width=%22200%22 height=%22200%22/><text x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23888%22 font-size=%2224%22>🖼</text></svg>\'"></div>';
+                    html += '<div class="photo-item' + selectedClass + '" data-index="' + i + '" data-path="' + encodeURIComponent(item.path) + '"><img src="/thumb/' + thumbUrl + '?s=' + (item.size || 0) + '" loading="lazy" onerror="this.src=\'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22200%22><rect fill=%22%23333%22 width=%22200%22 height=%22200%22/><rect x=%2240%22 y=%2262%22 width=%22120%22 height=%2276%22 rx=%2210%22 fill=%22none%22 stroke=%22%23888%22 stroke-width=%228%22/><circle cx=%2268%22 cy=%2286%22 r=%228%22 fill=%22%23888%22/><path d=%22M48 132l26-26 20 20 24-24 30 30%22 fill=%22none%22 stroke=%22%23888%22 stroke-width=%228%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/></svg>\'"></div>';
                 }
             });
             if (currentDate) html += '</div></div>';
             document.getElementById('content').innerHTML = html;
+            // 等布局完成再回收：过早回收时读不到列宽（clientWidth=0），占位高度会退化成
+            // 测量值（受 content-visibility 影响而偏小），滚动条长度就会先短后长。
+            requestAnimationFrame(observeSections);
+            setTimeout(observeSections, 250);   // 兜底（页面在后台时 rAF 不触发）；幂等
         }
 
         // ---------- 媒体网格交互：事件委托（绑定一次，不随 render 增长） ----------
@@ -1247,7 +1551,7 @@
             
             if (selectMode) {
                 selectModeBtn.classList.add('active');
-                selectModeBtn.textContent = '✕ 退出';
+                setIconText(selectModeBtn, 'x', '退出');
                 selectAllBtn.style.display = 'block';
                 selectAllBtn.textContent = (selectedFiles.size === filteredMedia.length && filteredMedia.length > 0)
                     ? '取消全选' : '全选';
@@ -1269,16 +1573,16 @@
 
                 if (selectedFiles.size > 0) {
                     deleteBtn.style.display = 'block';
-                    deleteBtn.textContent = '🗑️ 删除 (' + selectedFiles.size + ')';
+                    setIconText(deleteBtn, 'trash', '删除 (' + selectedFiles.size + ')');
                     deleteBtn.style.opacity = '1';
                 } else {
                     deleteBtn.style.display = 'block';
-                    deleteBtn.textContent = '🗑️ 删除';
+                    setIconText(deleteBtn, 'trash', '删除');
                     deleteBtn.style.opacity = '0.5';
                 }
             } else {
                 selectModeBtn.classList.remove('active');
-                selectModeBtn.textContent = '选择';
+                setIconText(selectModeBtn, null, '选择');
                 selectAllBtn.style.display = 'none';
                 deleteBtn.style.display = 'none';
                 deleteBtn.style.opacity = '1';
@@ -1345,9 +1649,13 @@
                     selectedFiles.clear();
                     selectMode = false;
                     updateActionButtons();
-                    // 同样只做增量同步，避免批量删除后全量重建 1.6 万个格子
+                    // 同样只做增量同步，避免批量删除后全量重建 1.6 万个格子。
+                    // 回收过的分区先整体恢复（增量同步依赖完整的 data-index 前提），
+                    // 同步完再交给观察器按视口重新回收。
                     const scrollY = window.scrollY;
+                    restoreAllRecycledSections(true);   // 同步恢复：增量同步依赖完整的 data-index
                     syncGridAfterDelete(deletedSet, null);
+                    observeSections();
                     window.scrollTo(0, scrollY);
                 }
             } catch (e) {
@@ -1565,6 +1873,19 @@
         
         // ---- 自定义视频控制条 ----
         let vcVideo = null;
+        // ── 全屏状态监听：只注册一次 ──────────────────────────────
+        // 修复（2026-10-10）：过去每个视频都在 setupVideoControls 里
+        // document.addEventListener('fullscreenchange', ...)，闭包持有那一次创建的
+        // 整条控制条 DOM。于是每看一个视频就把一份控制条永久钉在内存里，
+        // 长时浏览后监听器/节点累积到几十万，删除等一次 DOM 重建就让主线程卡到
+        // Chrome 报「页面无响应」。现在只用 currentFullBtn 指向"当前那个按钮"。
+        let currentFullBtn = null;
+        document.addEventListener('fullscreenchange', () => {
+            if ((!document.fullscreenElement && !document.webkitFullscreenElement) && currentFullBtn) {
+                currentFullBtn.innerHTML = ic('maximize', true);
+            }
+        });
+
         function setupVideoControls(video, mediaPath) {
             vcVideo = video;
             const ctrl = document.createElement('div');
@@ -1586,7 +1907,7 @@
                 </div>
                 <span class="vc-time" id="vcTime">00:00 / 00:00</span>
                 <input type="range" class="vc-vol" id="vcVol" min="0" max="100" value="100">
-                <button class="vc-full" id="vcFull">⛶</button>`;
+                <button class="vc-full" id="vcFull">${ic('maximize', true)}</button>`;
             document.getElementById('lightboxContent').appendChild(ctrl);
             // 缓冲/加载提示 & 长按倍速徽标（独立于自动隐藏的控制条）
             const loading = document.createElement('div');
@@ -1595,7 +1916,7 @@
             document.getElementById('lightboxContent').appendChild(loading);
             const fastBadge = document.createElement('div');
             fastBadge.className = 'vc-fast';
-            fastBadge.textContent = '⏩ 2x';
+            fastBadge.textContent = '2x';
             document.getElementById('lightboxContent').appendChild(fastBadge);
             
             const seek = ctrl.querySelector('.vc-seek');
@@ -1606,6 +1927,7 @@
             const timeEl = ctrl.querySelector('.vc-time');
             const volEl = ctrl.querySelector('.vc-vol');
             const fullBtn = ctrl.querySelector('.vc-full');
+            currentFullBtn = fullBtn;   // 供上面「只注册一次」的全屏监听更新图标
             
             let hideTimer, lastSave = 0, seeking = false, hovering = false;
             // 淡出必须同时关掉 pointer-events：只把 opacity 设成 0 的话，那条“看不见”
@@ -1747,18 +2069,16 @@
                 const container = document.getElementById('lightboxContent');
                 if (document.fullscreenElement || document.webkitFullscreenElement) {
                     (document.exitFullscreen || document.webkitExitFullscreen).call(document);
-                    fullBtn.textContent = '⛶';
+                    fullBtn.innerHTML = ic('maximize', true);
                 } else {
                     (container.requestFullscreen || container.webkitRequestFullscreen).call(container);
-                    fullBtn.textContent = '🗗';
+                    fullBtn.innerHTML = ic('minimize', true);
                 }
             };
-            document.addEventListener('fullscreenchange', () => {
-                if (!document.fullscreenElement && !document.webkitFullscreenElement) fullBtn.textContent = '⛶';
-            });
+            // 全屏状态变化由上面那个「只注册一次」的监听处理（这里不再注册，避免泄漏）
 
             // 长按屏幕临时倍速播放，松手恢复原速。
-            // 提示文案是底部居中大字「2x 快进中 ▶▶」，长按期间显示、松手即消失
+            // 提示文案是底部居中大字「2x 快进中」，长按期间显示、松手即消失
             // （见 .vc-fast 的 CSS）。原来是个挂在屏幕正中的小徽标，会挡画面。
             let lpTimer = null, lpActive = false, lpSuppressClick = false, lpStartX = 0, lpStartY = 0, baseRate = 1, fastBadgeTimer = null;
             const LP_MS = 500, LP_SPEED = 2;
@@ -1781,7 +2101,7 @@
                         video.playbackRate = Math.max(LP_SPEED, baseRate);
                         // 文案与样式对齐"底部居中大字"（原来是个遮画面的小徽标）
                         fastBadge.textContent = video.playbackRate + 'x ' +
-                            (video.playbackRate < 1 ? '慢放' : '快进中') + ' ▶▶';
+                            (video.playbackRate < 1 ? '慢放' : '快进中');
                         fastBadge.classList.add('show');
                         // 1 秒后自动隐藏（松手时也会立即隐藏）
                         clearTimeout(fastBadgeTimer);
@@ -1807,10 +2127,31 @@
             ctrl.addEventListener('mousemove', show);
             ctrl.addEventListener('touchstart', (e) => { e.stopPropagation(); show(); });
             ctrl.addEventListener('click', (e) => e.stopPropagation());
-            
+
+            // 清理钩子：由 destroyVideo / clearVideoControls 调用。
+            // 显式清掉定时器、document 级引用（currentFullBtn）和控制条 DOM，
+            // 保证看完的视频不留常驻内存（这是长时浏览变卡的根源）。
+            let cleaned = false;
+            video.__mbCleanup = () => {
+                if (cleaned) return;
+                cleaned = true;
+                clearTimeout(hideTimer);
+                clearTimeout(lpTimer);
+                clearTimeout(fastBadgeTimer);
+                endLongPress();
+                if (currentFullBtn === fullBtn) currentFullBtn = null;
+                if (vcVideo === video) vcVideo = null;
+                try { ctrl.remove(); } catch (e) {}
+                try { loading.remove(); } catch (e) {}
+                try { fastBadge.remove(); } catch (e) {}
+            };
+
             show();
         }
         function clearVideoControls() {
+            // 先跑当前视频的清理钩子（定时器 / document 级引用 / 控制条 DOM 一起释放）
+            const curVideo = document.querySelector('.lightbox-content video');
+            if (curVideo && curVideo.__mbCleanup) { try { curVideo.__mbCleanup(); } catch (e) {} }
             const ctrl = document.querySelector('.video-controls');
             if (ctrl) ctrl.remove();
             const loading = document.querySelector('.vc-loading');
@@ -1838,9 +2179,9 @@
                 const thumbUrl = safePath(item.path);
                 html += '<div class="photo-item' + selectedClass + '" data-index="' + i
                      +  '" data-path="' + encodeURIComponent(item.path) + '">';
-                html += '<img src="/thumb/' + thumbUrl + '" loading="lazy" onerror="this.src=\'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22200%22><rect fill=%22%23333%22 width=%22200%22 height=%22200%22/><text x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23888%22 font-size=%2224%22>🖼</text></svg>\'">';
+                html += '<img src="/thumb/' + thumbUrl + '?s=' + (item.size || 0) + '" loading="lazy" onerror="this.src=\'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22200%22><rect fill=%22%23333%22 width=%22200%22 height=%22200%22/><rect x=%2240%22 y=%2262%22 width=%22120%22 height=%2276%22 rx=%2210%22 fill=%22none%22 stroke=%22%23888%22 stroke-width=%228%22/><circle cx=%2268%22 cy=%2286%22 r=%228%22 fill=%22%23888%22/><path d=%22M48 132l26-26 20 20 24-24 30 30%22 fill=%22none%22 stroke=%22%23888%22 stroke-width=%228%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/></svg>\'">';
                 if (item.isVideo) {
-                    html += '<div class="video-overlay"><div class="play-indicator"></div></div>';
+                    html += '<div class="video-overlay">' + (item.duration > 0 ? '<span class="video-duration">' + durText(item.duration) + '</span>' : '') + '</div>';
                 }
                 html += '</div>';
             });
@@ -1852,11 +2193,9 @@
         function syncGridAfterDelete(deletedPaths, keepPath) {
             const doomed = deletedPaths instanceof Set ? deletedPaths : new Set(deletedPaths);
 
-            // 1) 摘掉已删的格子，并记下每个日期分区里最小/最大的索引
-            const sections = [];
-            document.querySelectorAll('#content .date-section').forEach(sec => {
-                const grid = sec.querySelector('.photo-grid');
-                if (!grid) return;
+            // 1) 摘掉已删的格子，并记下每个网格块（同一日期可能被切成多块）里最小/最大的索引
+            const units = [];
+            document.querySelectorAll('#content .photo-grid').forEach(grid => {
                 let start = Infinity, end = -Infinity, removed = 0;
                 grid.querySelectorAll('.photo-item').forEach(el => {
                     const idx = parseInt(el.dataset.index, 10);
@@ -1868,7 +2207,7 @@
                         removed++;
                     }
                 });
-                if (start !== Infinity) sections.push({ sec, grid, start, end, removed });
+                if (start !== Infinity) units.push({ grid, start, end, removed });
             });
 
             if (doomed.size === 0) {
@@ -1878,28 +2217,28 @@
                 return ni;
             }
 
-            // 2) 分区顺序 = filteredMedia 顺序（每张都是连续的），据此算新的起始索引
-            sections.sort((a, b) => a.start - b.start);
+            // 2) 块顺序 = filteredMedia 顺序（每张都是连续的），据此算新的起始索引
+            units.sort((a, b) => a.start - b.start);
             const newStart = new Map();
             let off = 0;
-            sections.forEach(s => {
-                newStart.set(s.sec, s.start - off);
+            units.forEach(s => {
+                newStart.set(s.grid, s.start - off);
                 off += s.removed;
             });
 
-            // 3) 只重建被删过的分区，并同步 data-index / 选中态
-            sections.forEach(s => {
+            // 3) 只重建被删过的块，并同步 data-index / 选中态
+            units.forEach(s => {
                 if (s.removed === 0) return;
-                const ns = newStart.get(s.sec);
+                const ns = newStart.get(s.grid);
                 const items = filteredMedia.slice(ns, ns + s.grid.children.length);
                 s.grid.innerHTML = sectionItemsHTML(items, ns);
             });
 
-            // 4) 被删分区之后的格子整体左移，重写 data-index（纯属性写，开销很小）
-            sections.forEach(s => {
+            // 4) 被删块之后的格子整体左移，重写 data-index（纯属性写，开销很小）
+            units.forEach(s => {
                 if (s.removed > 0) return;
-                if (s.end < newStart.get(s.sec)) return;
-                const ns = newStart.get(s.sec);
+                if (s.end < newStart.get(s.grid)) return;
+                const ns = newStart.get(s.grid);
                 const els = s.grid.children;
                 const delta = ns - s.start;
                 if (delta === 0) return;
@@ -1908,9 +2247,12 @@
                 }
             });
 
-            // 5) 日期分区被删空则整段移除
-            sections.forEach(s => {
-                if (s.grid.children.length === 0) s.sec.remove();
+            // 5) 被删空的块移除；整个日期都没格子了，连日期头一起移除
+            units.forEach(s => {
+                if (s.grid.children.length === 0) s.grid.remove();
+            });
+            document.querySelectorAll('#content .date-section').forEach(sec => {
+                if (!sec.querySelector('.photo-item')) sec.remove();
             });
 
             if (filteredMedia.length === 0) return -1;
@@ -1926,6 +2268,7 @@
         // 最终必须刷新才能恢复。现在两条路径共用这一个函数。
         function destroyVideo(v) {
             if (!v) return;
+            try { if (v.__mbCleanup) v.__mbCleanup(); } catch (e) {}
             try {
                 if (currentFilter === 'movie' && v.duration && v._mbPath) {
                     localStorage.setItem('mb_pos_' + v._mbPath, String(v.currentTime));
@@ -1956,8 +2299,16 @@
             // 滚动到当前查看的图片位置
             if (filteredMedia.length > 0 && currentIndex >= 0) {
                 const currentItem = filteredMedia[Math.min(currentIndex, filteredMedia.length - 1)];
-                const el = document.querySelector(`[data-path="${encodeURIComponent(currentItem.path)}"]`);
-                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                let el = document.querySelector(`[data-path="${encodeURIComponent(currentItem.path)}"]`);
+                if (el) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                } else {
+                    // 目标所在分区已被回收：异步（逐帧）恢复，不阻塞，并直接滚到该分区
+                    const idx = Math.min(currentIndex, filteredMedia.length - 1);
+                    restoreAllRecycledSections(false);
+                    const sec = sectionForIndex(idx);
+                    if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
             }
         }
         
@@ -2149,7 +2500,7 @@
 
             function showStationToast(msg, isErr) {
                 const t = $id('stationToast');
-                t.textContent = msg;
+                setIconText(t, isErr ? 'alert' : 'check', msg);
                 t.className = 'station-toast show' + (isErr ? ' err' : '');
                 clearTimeout(stationToastTimer);
                 stationToastTimer = setTimeout(() => t.classList.remove('show'), 2600);
@@ -2246,9 +2597,9 @@
                 const cls = running ? 'on' : (state === 'busy' ? 'busy' : 'off');
                 $id('stationDot').className = 'status-dot ' + cls;
                 $id('fabDot').className = 'fab-dot ' + cls;
-                $id('listenToggleBtn').textContent = running ? '⏹ 停止监听' : '▶ 开始监听';
-                $id('fabToggleBtn').textContent = running ? '⏹ 停止监听' : '▶ 开始监听';
-                $id('fabIcon').textContent = running ? '⏹' : '▶';
+                setIconText($id('listenToggleBtn'), running ? 'square' : 'play', running ? '停止监听' : '开始监听');
+                setIconText($id('fabToggleBtn'), running ? 'square' : 'play', running ? '停止监听' : '开始监听');
+                $id('fabIcon').innerHTML = ic(running ? 'square' : 'play', true);
             }
 
             async function refreshStationStatus() {
@@ -2392,7 +2743,7 @@
                             + '<div class="dl-task-head"><span class="dl-task-name" title="' + fname + '">' + fname + '</span>'
                             + '<span class="dl-task-pct">' + pct + '%' + mb + '</span></div>'
                             + '<div class="dl-bar"><div class="dl-bar-fill" style="width:' + pct + '%"></div></div>'
-                            + '<div class="dl-task-actions"><button class="dl-cancel-btn" data-file="' + fname + '">✖ 取消此任务</button></div>'
+                            + '<div class="dl-task-actions"><button class="dl-cancel-btn" data-file="' + fname + '">' + ic('x') + '取消此任务</button></div>'
                             + '</div>';
                     }).join('');
                 } else {
@@ -2532,31 +2883,31 @@
                 const curChannels = (valOf(cfg, 'channels') || []).map(String);
                 window._stationChannels = curChannels;
                 // 登录状态面板（扫码登录入口）
-                let html = '<div class="modal-section-title">📱 登录状态</div>'
+                let html = '<div class="modal-section-title">' + ic('smartphone') + '登录状态</div>'
                     + '<div class="login-panel">'
                     + '<span class="login-status-text" id="loginStatusText">检查中…</span>'
-                    + '<button class="topbar-btn" id="scanLoginBtn">📱 扫码登录</button>'
+                    + '<button class="topbar-btn" id="scanLoginBtn">' + ic('smartphone') + '扫码登录</button>'
                     + '</div>'
                     + '<div class="qr-container" id="qrContainer" style="display:none;">'
                     + '<img id="qrImage" alt="Telegram 登录二维码">'
                     + '<p class="qr-hint">打开手机 Telegram → 设置 → 设备 → 扫描二维码登录<br>二维码 120 秒内有效</p>'
                     + '</div>'
-                    // 📡 频道选择器：勾选账号已加入的频道，替代手填 ID
-                    + '<div class="modal-section-title">📡 监听频道</div>'
+                    // 频道选择器：勾选账号已加入的频道，替代手填 ID
+                    + '<div class="modal-section-title">' + ic('list') + '监听频道</div>'
                     + '<div class="channel-panel">'
                     + '<div class="channel-bar">'
                     + '<span class="namelist-hint">勾选要监听的频道，保存后生效</span>'
-                    + '<button class="topbar-btn" id="loadChannelsBtn">🔄 加载频道列表</button>'
+                    + '<button class="topbar-btn" id="loadChannelsBtn">' + ic('refresh') + '加载频道列表</button>'
                     + '</div>'
                     + '<div id="channelList" class="channel-list"><span class="namelist-hint">点击「加载频道列表」从账号已加入的频道中勾选</span></div>'
                     + '</div>'
-                    // 🎬 动漫名单编辑窗口：直接读写 mz.txt
-                    + '<div class="modal-section-title">🎬 动漫名单 (mz.txt)</div>'
+                    // 动漫名单编辑窗口：直接读写 mz.txt
+                    + '<div class="modal-section-title">' + ic('video') + '动漫名单 (mz.txt)</div>'
                     + '<div class="namelist-panel">'
                     + '<textarea id="namelistEditor" class="namelist-editor" placeholder="每行一个动漫，格式：《动漫名》：角色1、角色2、角色3&#10;例如：《海贼王》：娜美、罗宾、女帝" spellcheck="false"></textarea>'
                     + '<div class="namelist-bar">'
                     + '<span class="namelist-hint">格式：每行《动漫名》：角色1、角色2，保存后立即生效</span>'
-                    + '<button class="topbar-btn primary" id="saveNameListBtn">💾 保存名单</button>'
+                    + '<button class="topbar-btn primary" id="saveNameListBtn">' + ic('save') + '保存名单</button>'
                     + '</div>'
                     + '</div>';
                 for (const g of SETTING_GROUPS) {
@@ -2612,16 +2963,16 @@
                 const btn = $id('loadChannelsBtn');
                 if (!listEl) return;
                 btn.disabled = true;
-                btn.textContent = '⏳ 加载中…';
+                btn.textContent = '加载中…';
                 listEl.innerHTML = '<span class="namelist-hint">正在连接 Telegram 拉取频道…</span>';
                 const res = await stationFetch('/api/channels');
                 btn.disabled = false;
-                btn.textContent = '🔄 加载频道列表';
+                setIconText(btn, 'refresh', '加载频道列表');
                 if (!res.ok) {
                     const hint = (res.error || '加载失败').indexOf('下载器正在运行') >= 0
-                        ? '⏹ 请先点击顶部「停止监听」，再加载频道列表'
+                        ? '请先点击顶部「停止监听」，再加载频道列表'
                         : (res.error || '加载失败');
-                    listEl.innerHTML = '<span class="namelist-hint" style="color:#ef4444;">❌ ' + hint + '</span>';
+                    listEl.innerHTML = '<span class="namelist-hint" style="color:#ef4444;">' + ic('alert') + hint + '</span>';
                     return;
                 }
                 const chans = res.channels || [];
@@ -2664,11 +3015,11 @@
                 msgEl.className = 'modal-msg';
                 const res = await stationFetch('/api/namelist', { method: 'POST', body: JSON.stringify({ content: el.value }) });
                 if (res.ok) {
-                    msgEl.textContent = '✅ 名单已保存（下载器自动生效）';
+                    setIconText(msgEl, 'check', '名单已保存（下载器自动生效）');
                     msgEl.className = 'modal-msg';
-                    showStationToast('💾 名单已保存');
+                    showStationToast('名单已保存');
                 } else {
-                    msgEl.textContent = '❌ ' + (res.error || '保存失败');
+                    setIconText(msgEl, 'alert', (res.error || '保存失败'));
                     msgEl.className = 'modal-msg err';
                 }
             }
@@ -2718,11 +3069,11 @@
                 msgEl.className = 'modal-msg';
                 const res = await stationFetch('/api/settings', { method: 'POST', body: JSON.stringify(data) });
                 if (res.ok) {
-                    msgEl.textContent = res.restarted ? '✅ 已保存，下载器已重启应用新配置' : '✅ 已保存';
+                    setIconText(msgEl, 'check', res.restarted ? '已保存，下载器已重启应用新配置' : '已保存');
                     setTimeout(closeSettings, 1200);
                     refreshStationStatus();
                 } else {
-                    msgEl.textContent = '❌ ' + (res.error || '保存失败');
+                    setIconText(msgEl, 'alert', (res.error || '保存失败'));
                     msgEl.className = 'modal-msg err';
                 }
             }
@@ -2735,11 +3086,11 @@
                 if (!res.ok) return;
                 const el = $id('loginStatusText');
                 if (res.status === 'logged_in') {
-                    el.textContent = '✅ 已登录';
+                    setIconText(el, 'check', '已登录');
                     el.className = 'login-status-text ok';
                     $id('qrContainer').style.display = 'none';
                 } else {
-                    el.textContent = '❌ 未登录';
+                    setIconText(el, 'alert', '未登录');
                     el.className = 'login-status-text';
                 }
             }
@@ -2750,22 +3101,22 @@
                 btn.textContent = '连接中…';
                 const res = await stationFetch('/api/login/qr');
                 btn.disabled = false;
-                btn.textContent = '📱 扫码登录';
+                setIconText(btn, 'smartphone', '扫码登录');
                 if (!res.ok) {
-                    showStationToast('❌ ' + (res.error || '登录失败'), true);
+                    showStationToast((res.error || '登录失败'), true);
                     return;
                 }
                 if (res.status === 'already' || res.status === 'success') {
-                    $id('loginStatusText').textContent = '✅ 已登录 @' + (res.username || '');
+                    setIconText($id('loginStatusText'), 'check', '已登录 @' + (res.username || ''));
                     $id('loginStatusText').className = 'login-status-text ok';
                     $id('qrContainer').style.display = 'none';
-                    showStationToast('🎉 已登录 ' + (res.username || ''));
+                    showStationToast('已登录 ' + (res.username || ''));
                     return;
                 }
                 if (res.status === 'qr') {
                     $id('qrImage').src = res.qr;
                     $id('qrContainer').style.display = 'block';
-                    $id('loginStatusText').textContent = '⏳ 请用手机 Telegram 扫码';
+                    setIconText($id('loginStatusText'), 'clock', '请用手机 Telegram 扫码');
                     $id('loginStatusText').className = 'login-status-text';
                     pollLoginResult();
                     return;
@@ -2783,16 +3134,16 @@
                         // 验证并获取用户名（已登录时不会生成新二维码）
                         const v = await stationFetch('/api/login/qr');
                         if (v.ok && (v.status === 'already' || v.status === 'success')) {
-                            $id('loginStatusText').textContent = '✅ 已登录 @' + (v.username || '');
+                            setIconText($id('loginStatusText'), 'check', '已登录 @' + (v.username || ''));
                             $id('loginStatusText').className = 'login-status-text ok';
                             $id('qrContainer').style.display = 'none';
-                            showStationToast('🎉 扫码登录成功');
+                            showStationToast('扫码登录成功');
                             return;
                         }
                         // session 文件存在但未真正登录（过期）→ 展示新二维码
                         if (v.ok && v.status === 'qr') {
                             $id('qrImage').src = v.qr;
-                            $id('loginStatusText').textContent = '⏳ 二维码已刷新，请重新扫码';
+                            setIconText($id('loginStatusText'), 'refresh', '二维码已刷新，请重新扫码');
                             return;
                         }
                         return;
@@ -2800,9 +3151,9 @@
                     if (Date.now() - start > 60 * 1000) {
                         clearInterval(loginPollTimer);
                         $id('qrContainer').style.display = 'none';
-                        $id('loginStatusText').textContent = '⏰ 扫码超时，请重试';
+                        setIconText($id('loginStatusText'), 'alert', '扫码超时，请重试');
                         $id('loginStatusText').className = 'login-status-text';
-                        showStationToast('⏰ 扫码超时，请重试', true);
+                        showStationToast('扫码超时，请重试', true);
                     }
                 }, 2000);
             }
@@ -2816,7 +3167,7 @@
                 } catch (e) {}
                 const res = await stationFetch('/api/refresh', { method: 'POST', body: '{}' });
                 if (res.ok) {
-                    showStationToast('🔄 正在刷新媒体索引…');
+                    showStationToast('正在刷新媒体索引…');
                     setTimeout(async () => {
                         await refreshStationStatus();
                         const after = stationData && stationData.media ? stationData.media.total : -1;

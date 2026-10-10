@@ -4,20 +4,17 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"image"
 	"image/color"
-	"image/jpeg"
-	"io/fs"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,15 +22,19 @@ import (
 )
 
 type MediaFile struct {
-	Path    string
-	Date    time.Time
-	IsVideo bool
+	Path     string
+	Date     time.Time
+	IsVideo  bool
+	Size     int64
+	Duration float64 // 视频时长（秒），图片为 0；由 ffprobe/ffmpeg 探测并随索引持久化
 }
 
 type LightMediaFile struct {
-	Path    string `json:"path"`
-	Date    string `json:"date"`
-	IsVideo bool   `json:"isVideo"`
+	Path     string  `json:"path"`
+	Date     string  `json:"date"`
+	IsVideo  bool    `json:"isVideo"`
+	Size     int64   `json:"size"`
+	Duration float64 `json:"duration"`
 }
 
 var (
@@ -95,6 +96,8 @@ $dialog.SelectedPath
 
 func main() {
 	ffmpegPath = findFFmpeg()
+	// ffprobe 优先用于时长探测；找不到时为空，probeDuration 会自动回退 ffmpeg
+	ffprobePath = findFFprobe()
 
 	flag.StringVar(&mediaDir, "dir", "", "Media directory (required)")
 	flag.IntVar(&port, "port", 8080, "HTTP port (default: 8080)")
@@ -137,12 +140,12 @@ func main() {
 
 	loadIndex()
 
+	// 扫描/刷新统一走调度器：同一时刻最多一个扫描在跑，扫描期间的请求
+	// 合并为下一轮补扫，缩略图只在「没有待补扫任务」之后基于最新索引生成。
 	go func() {
-		scanFiles()
-		go generateAllThumbnails()
+		scanSched.Request()
 		for range time.Tick(scanInterval) {
-			scanFiles()
-			go generateAllThumbnails()
+			scanSched.Request()
 		}
 	}()
 
@@ -151,6 +154,7 @@ func main() {
 	http.HandleFunc("/api/files/", filesHandler)
 	http.HandleFunc("/api/file/", fileHandler)
 	http.HandleFunc("/api/delete", deleteHandler)
+	http.HandleFunc("/api/refresh", refreshHandler)
 	http.HandleFunc("/thumb/", thumbHandler)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 
@@ -176,37 +180,31 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 注入首页数据，跳过API请求
+	// 注入首页数据，跳过API请求。
+	// 日期列表与首个日期的文件都直接取自日期索引（已按倒序维护），
+	// 不再遍历整个媒体文件列表。
 	indexMutex.RLock()
+	dateList := make([]string, len(dateKeys))
+	copy(dateList, dateKeys)
 	firstDate := ""
-	var firstFiles []LightMediaFile
-	dates := make(map[string]bool)
-	for _, f := range mediaIndex {
-		d := f.Date.Format("2006-01-02")
-		dates[d] = true
-		if firstDate == "" || d > firstDate {
-			firstDate = d
-		}
+	if len(dateList) > 0 {
+		firstDate = dateList[0]
 	}
+	var firstFiles []LightMediaFile
 	if firstDate != "" {
-		for _, f := range mediaIndex {
-			if f.Date.Format("2006-01-02") == firstDate {
-				firstFiles = append(firstFiles, LightMediaFile{
-					Path:    f.Path,
-					Date:    f.Date.Format("2006-01-02"),
-					IsVideo: f.IsVideo,
-				})
-				if len(firstFiles) >= 100 {
-					break
-				}
+		for _, f := range dateIndex[firstDate] {
+			firstFiles = append(firstFiles, LightMediaFile{
+				Path:     f.Path,
+				Date:     firstDate,
+				IsVideo:  f.IsVideo,
+				Size:     f.Size,
+				Duration: f.Duration,
+			})
+			if len(firstFiles) >= 100 {
+				break
 			}
 		}
 	}
-	dateList := make([]string, 0, len(dates))
-	for d := range dates {
-		dateList = append(dateList, d)
-	}
-	sort.Sort(sort.Reverse(sort.StringSlice(dateList)))
 	indexMutex.RUnlock()
 
 	initData, _ := json.Marshal(map[string]interface{}{
@@ -222,23 +220,15 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 func datesHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "max-age=300")
 	indexMutex.RLock()
-	defer indexMutex.RUnlock()
-
-	dates := make(map[string]bool)
-	for _, f := range mediaIndex {
-		dates[f.Date.Format("2006-01-02")] = true
-	}
-
-	dateList := make([]string, 0, len(dates))
-	for d := range dates {
-		dateList = append(dateList, d)
-	}
-	sort.Sort(sort.Reverse(sort.StringSlice(dateList)))
+	dateList := make([]string, len(dateKeys))
+	copy(dateList, dateKeys)
+	total := len(mediaIndex)
+	indexMutex.RUnlock()
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"dates": dateList,
-		"total": len(mediaIndex),
+		"total": total,
 	})
 }
 
@@ -295,19 +285,21 @@ func filesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 直接命中日期索引（O(该日期的文件数)），不再逐次遍历全部媒体文件。
+	// 索引切片在重建时整体替换，取得引用后即使解锁也不会被改写（不可变快照）。
 	indexMutex.RLock()
-	defer indexMutex.RUnlock()
+	dayFiles := dateIndex[date]
+	indexMutex.RUnlock()
 
-	var files []LightMediaFile
-	targetDate := date
-	for _, f := range mediaIndex {
-		if f.Date.Format("2006-01-02") == targetDate {
-			files = append(files, LightMediaFile{
-				Path:    f.Path,
-				Date:    f.Date.Format("2006-01-02"),
-				IsVideo: f.IsVideo,
-			})
-		}
+	files := make([]LightMediaFile, 0, len(dayFiles))
+	for _, f := range dayFiles {
+		files = append(files, LightMediaFile{
+			Path:     f.Path,
+			Date:     date,
+			IsVideo:  f.IsVideo,
+			Size:     f.Size,
+			Duration: f.Duration,
+		})
 	}
 
 	pageSize := filesPageSize
@@ -340,21 +332,19 @@ func filesHandler(w http.ResponseWriter, r *http.Request) {
 
 func fileHandler(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/file/")
-	fullPath := filepath.Join(mediaDir, filepath.FromSlash(path))
 
-	absMedia, _ := filepath.Abs(mediaDir)
-	absFull, _ := filepath.Abs(fullPath)
-	if !strings.HasPrefix(absFull, absMedia) {
+	// 统一安全校验：目录边界 + 符号链接/junction 解析（见 pathsafe.go）
+	mp, err := safeMediaPath(mediaDir, path)
+	if err != nil {
+		writeMediaPathError(w, r, "file", path, err)
+		return
+	}
+	if mp.Info.IsDir() {
 		http.NotFound(w, r)
 		return
 	}
 
-	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
-		http.NotFound(w, r)
-		return
-	}
-
-	ext := strings.ToLower(filepath.Ext(path))
+	ext := strings.ToLower(filepath.Ext(mp.Rel))
 	if videoExts[ext] {
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Accept-Ranges", "bytes")
@@ -362,7 +352,8 @@ func fileHandler(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "max-age=86400")
 	}
 
-	http.ServeFile(w, r, fullPath)
+	// 用解析链接后的真实路径提供服务，避免校验后被替换的链接被跟随
+	http.ServeFile(w, r, mp.Real)
 }
 
 func deleteHandler(w http.ResponseWriter, r *http.Request) {
@@ -384,28 +375,33 @@ func deleteHandler(w http.ResponseWriter, r *http.Request) {
 	failed := 0
 
 	for _, fileName := range req.Files {
-		filePath := filepath.Join(mediaDir, filepath.FromSlash(fileName))
-		safeName := strings.ReplaceAll(fileName, "/", "_")
-		thumbPath := filepath.Join(thumbsDir, safeName+".thumb.jpg")
-
-		absMedia, _ := filepath.Abs(mediaDir)
-		absFull, _ := filepath.Abs(filePath)
-		if !strings.HasPrefix(absFull, absMedia) {
+		// 删除专用校验：只允许普通文件或指向根内文件的符号链接；
+		// 符号链接只删除链接本身（os.Remove 不跟随链接）
+		mp, err := safeDeleteTarget(mediaDir, fileName)
+		if err != nil {
+			if !errors.Is(err, ErrPathMissing) {
+				logPathReject("delete", fileName, err)
+				failed++
+			}
 			continue
 		}
-
-		if _, err := os.Stat(filePath); err == nil {
-			if err := os.Remove(filePath); err == nil {
-				deleted++
-				os.Remove(thumbPath)
-			} else {
-				failed++
-				log.Printf("Failed to delete %s: %v", filePath, err)
-			}
+		srcInfo, statErr := os.Stat(mp.Real)
+		if err := os.Remove(mp.Full); err != nil {
+			failed++
+			log.Printf("[media] 删除失败 %s: %v", mp.Rel, err)
+			continue
+		}
+		deleted++
+		if statErr == nil {
+			removeThumbCache(mp.Rel, srcInfo.Size(), srcInfo.ModTime())
+		} else {
+			// 拿不到内容指纹时至少清理旧命名缓存
+			removeThumbCache(mp.Rel, 0, time.Time{})
 		}
 	}
 
-	go scanFiles()
+	// 删除后走统一调度器刷新索引（扫描期间的重复请求会被合并，不会丢弃）
+	scanSched.Request()
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -418,129 +414,32 @@ func deleteHandler(w http.ResponseWriter, r *http.Request) {
 func thumbHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache, must-revalidate")
 	path := strings.TrimPrefix(r.URL.Path, "/thumb/")
-	// URL解码：前端用encodeURIComponent，这里解码回原始中文路径
-	if decoded, err := url.PathUnescape(path); err == nil {
-		path = decoded
-	}
-	safeName := strings.ReplaceAll(path, "/", "_")
-	thumbPath := filepath.Join(thumbsDir, safeName+".thumb.jpg")
-	fullPath := filepath.Join(mediaDir, filepath.FromSlash(path))
 
-	absMedia, _ := filepath.Abs(mediaDir)
-	absFull, _ := filepath.Abs(fullPath)
-	if !strings.HasPrefix(absFull, absMedia) {
-		http.NotFound(w, r)
-		return
-	}
-
-	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
-		http.NotFound(w, r)
-		return
-	}
-
-	needRegenerate := false
-	thumbInfo, err1 := os.Stat(thumbPath)
-	origInfo, err2 := os.Stat(fullPath)
-
-	if err1 != nil || thumbInfo == nil {
-		needRegenerate = true
-	} else if err2 == nil && origInfo != nil && origInfo.ModTime().After(thumbInfo.ModTime()) {
-		needRegenerate = true
-	}
-
-	if !needRegenerate {
-		http.ServeFile(w, r, thumbPath)
-		return
-	}
-
-	ext := strings.ToLower(filepath.Ext(path))
-
-	var img image.Image
-	if videoExts[ext] {
-		img = generateVideoThumbnail(fullPath)
-	} else {
-		img = generateImageThumbnail(fullPath)
-	}
-
-	if img == nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	var buf bytes.Buffer
-	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 85}); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	os.WriteFile(thumbPath, buf.Bytes(), 0644)
-	w.Header().Set("Content-Type", "image/jpeg")
-	w.Write(buf.Bytes())
-}
-
-func generateImageThumbnail(imagePath string) image.Image {
-	cmd := exec.Command(ffmpegPath,
-		"-i", imagePath,
-		"-vframes", "1",
-		"-vf", fmt.Sprintf("scale='if(gt(iw,ih),%d,-2)':'if(gt(iw,ih),-2,%d)':flags=lanczos", thumbSize, thumbSize),
-		"-q:v", "2",
-		"-f", "image2pipe",
-		"-")
-	var out bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err == nil {
-		img, _, err := image.Decode(&out)
-		if err == nil {
-			return img
-		}
-	}
-
-	file, err := os.Open(imagePath)
+	// 源文件必须先过统一安全校验（URL 解码在 safeMediaPath 内完成）
+	mp, err := safeMediaPath(mediaDir, path)
 	if err != nil {
-		log.Printf("Failed to open image: %v", err)
-		return nil
+		writeMediaPathError(w, r, "thumbnail", path, err)
+		return
 	}
-	defer file.Close()
+	if mp.Info.IsDir() {
+		http.NotFound(w, r)
+		return
+	}
 
-	img, _, err := image.Decode(file)
+	// 用「解析链接后的真实文件」的大小与修改时间构造缓存键
+	srcInfo, err := os.Stat(mp.Real)
 	if err != nil {
-		log.Printf("Failed to decode image: %v, path: %s", err, imagePath)
-		return nil
+		http.NotFound(w, r)
+		return
 	}
 
-	return resizeImage(img, thumbSize)
-}
-
-func generateVideoThumbnail(videoPath string) image.Image {
-	timePoints := []string{"00:00:01", "00:00:03", "00:00:05", "00:00:10"}
-
-	for _, timePoint := range timePoints {
-		cmd := exec.Command(ffmpegPath,
-			"-ss", timePoint,
-			"-i", videoPath,
-			"-vframes", "1",
-			"-vf", fmt.Sprintf("scale='if(gt(iw,ih),%d,-2)':'if(gt(iw,ih),-2,%d)':flags=lanczos", thumbSize, thumbSize),
-			"-q:v", "2",
-			"-f", "image2pipe",
-			"-")
-		var out bytes.Buffer
-		var stderr bytes.Buffer
-		cmd.Stdout = &out
-		cmd.Stderr = &stderr
-
-		if err := cmd.Run(); err == nil {
-			img, _, err := image.Decode(&out)
-			if err == nil {
-				return img
-			}
-		}
+	thumbPath, err := ensureThumb(mp, srcInfo)
+	if err != nil {
+		log.Printf("[media] 缩略图不可用 %s: %v", mp.Rel, err)
+		http.NotFound(w, r)
+		return
 	}
-
-	log.Printf("Failed to generate thumbnail for video: %s", videoPath)
-	return nil
+	http.ServeFile(w, r, thumbPath)
 }
 
 func resizeImage(img image.Image, maxSize int) image.Image {
@@ -617,173 +516,23 @@ func bilinearInterp(c00, c01, c10, c11 uint32, xFrac, yFrac float64) float64 {
 	return top*(1-yFrac) + bot*yFrac
 }
 
-func generateAllThumbnails() {
-	indexMutex.RLock()
-	files := make([]*MediaFile, len(mediaIndex))
-	copy(files, mediaIndex)
-	indexMutex.RUnlock()
-
-	workerCount := runtime.NumCPU()
-	jobs := make(chan string, len(files))
-	results := make(chan bool, len(files))
-	var wg sync.WaitGroup
-
-	for i := 0; i < workerCount; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for path := range jobs {
-				safeName := strings.ReplaceAll(path, "/", "_")
-				thumbPath := filepath.Join(thumbsDir, safeName+".thumb.jpg")
-				fullPath := filepath.Join(mediaDir, filepath.FromSlash(path))
-
-				needGenerate := false
-				thumbInfo, err1 := os.Stat(thumbPath)
-				origInfo, err2 := os.Stat(fullPath)
-
-				if err2 != nil || origInfo == nil {
-					results <- false
-					continue
-				}
-
-				if err1 != nil || thumbInfo == nil {
-					needGenerate = true
-				} else if origInfo.ModTime().After(thumbInfo.ModTime()) {
-					needGenerate = true
-				}
-
-				if !needGenerate {
-					results <- false
-					continue
-				}
-
-				ext := strings.ToLower(filepath.Ext(path))
-
-				var img image.Image
-				if videoExts[ext] {
-					img = generateVideoThumbnail(fullPath)
-				} else {
-					img = generateImageThumbnail(fullPath)
-				}
-
-				if img != nil {
-					f, err := os.Create(thumbPath)
-					if err == nil {
-						jpeg.Encode(f, img, &jpeg.Options{Quality: 85})
-						f.Close()
-						results <- true
-					} else {
-						results <- false
-					}
-				} else {
-					results <- false
-				}
-			}
-		}()
+// refreshHandler 请求重新扫描媒体目录并重建索引（第二阶段 · 第二部分）。
+// 与 tg-station 的 /api/refresh 行为一致：异步返回「正在刷新」，由调用方通过
+// /api/status 或 /api/dates 观察结果；扫描期间的重复请求合并为下一轮补扫，
+// 既不丢弃请求，也绝不提前返回虚假的「已完成」。
+func refreshHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
 	}
-
-	for _, f := range files {
-		jobs <- f.Path
-	}
-	close(jobs)
-
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	generated := 0
-	skipped := 0
-	for result := range results {
-		if result {
-			generated++
-		} else {
-			skipped++
-		}
-	}
-
-	log.Printf("缩略图预生成完成：新生成 %d 个，跳过 %d 个", generated, skipped)
-}
-
-func scanFiles() {
-	var files []*MediaFile
-	err := filepath.WalkDir(mediaDir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			name := d.Name()
-			if strings.HasPrefix(name, ".") || name == thumbsDir {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		ext := strings.ToLower(filepath.Ext(path))
-		if !imageExts[ext] && !videoExts[ext] {
-			return nil
-		}
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-		relPath, _ := filepath.Rel(mediaDir, path)
-		files = append(files, &MediaFile{
-			Path:    filepath.ToSlash(relPath),
-			Date:    info.ModTime(),
-			IsVideo: videoExts[ext],
-		})
-		return nil
+	started := scanSched.Request()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok":      true,
+		"message": "正在刷新媒体索引",
+		"started": started,
+		"merged":  !started,
+		"running": scanSched.Running(),
+		"pending": scanSched.Pending(),
 	})
-
-	if err != nil {
-		log.Printf("Scan error: %v", err)
-		return
-	}
-
-	sort.Slice(files, func(i, j int) bool {
-		return files[i].Date.After(files[j].Date)
-	})
-
-	indexMutex.Lock()
-	mediaIndex = files
-	lastScan = time.Now()
-	indexMutex.Unlock()
-
-	saveIndex()
-	log.Printf("Scanned %d files", len(files))
-}
-
-func loadIndex() {
-	data, err := os.ReadFile(indexPath)
-	if err != nil {
-		log.Printf("Index file not found: %v", err)
-		return
-	}
-
-	var files []*MediaFile
-	if err := json.Unmarshal(data, &files); err != nil {
-		log.Printf("Failed to parse index: %v", err)
-		return
-	}
-
-	indexMutex.Lock()
-	mediaIndex = files
-	indexMutex.Unlock()
-
-	log.Printf("Loaded index with %d files", len(files))
-}
-
-func saveIndex() {
-	indexMutex.RLock()
-	data, err := json.Marshal(mediaIndex)
-	indexMutex.RUnlock()
-
-	if err != nil {
-		log.Printf("Failed to marshal index: %v", err)
-		return
-	}
-
-	if err := os.WriteFile(indexPath, data, 0644); err != nil {
-		log.Printf("Failed to save index: %v", err)
-	}
 }

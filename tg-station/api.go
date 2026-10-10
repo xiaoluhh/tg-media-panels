@@ -68,9 +68,11 @@ func statusHandler(w http.ResponseWriter, r *http.Request) {
 			"autoStart": downloader.cfg != nil && downloader.cfg.Station.AutoStart,
 		},
 		"media": map[string]interface{}{
-			"total":    total,
-			"lastScan": lastScanStr,
-			"dir":      mediaDir,
+			"total":       total,
+			"lastScan":    lastScanStr,
+			"dir":         mediaDir,
+			"scanning":    scanSched.Running(),
+			"scanPending": scanSched.Pending(),
 		},
 		"movie_min_minutes": movieMinMinutes(),
 	})
@@ -347,20 +349,26 @@ func mergeMaps(base, incoming map[string]interface{}) map[string]interface{} {
 
 // ---------- /api/refresh ----------
 
-// refreshHandler 重新扫描媒体目录并重建索引（异步），返回后前端轮询 /api/status。
+// refreshHandler 请求重新扫描媒体目录并重建索引。
 // 由 Python 下载器下载完成后 POST 调用；也可手动触发。
+//
+// 语义保持与前端兼容：仍然是异步返回「正在刷新」，由前端轮询 /api/status 判断结果，
+// 绝不提前返回虚假的「已完成」。区别是请求会统一进入调度器：
+//   - 本次启动扫描 → started=true
+//   - 已有扫描在跑 → 合并为下一轮补扫（merged=true，绝不丢弃）
 func refreshHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeErr(w, http.StatusMethodNotAllowed, "请使用 POST")
 		return
 	}
-	go func() {
-		scanFiles()
-		go generateAllThumbnails()
-	}()
+	started := scanSched.Request()
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"ok":      true,
 		"message": "正在刷新媒体索引",
+		"started": started,
+		"merged":  !started,
+		"running": scanSched.Running(),
+		"pending": scanSched.Pending(),
 	})
 }
 

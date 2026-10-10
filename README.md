@@ -46,6 +46,24 @@ Telegram 频道媒体下载 + 网页浏览 + 影视筛选 + 播放器 + 设置�
 | `console_*.go`、`proc_*.go` | Windows / 非 Windows 的平台差异（隐藏控制台窗口、进程检测） |
 | `media-browser.service` | 树莓派 systemd 服务文件 |
 | `README.md` | 项目详细说明：API 列表、配置字段含义、排障 |
+| `pathsafe*.go`、`index.go`、`probe.go`、`scan.go`、`thumbs.go` | P2 媒体服务硬化：统一路径校验（含 Windows junction）、日期索引、ffprobe 探测、扫描调度、缩略图缓存 |
+| `pathsafe_test.go`、`scan_sched_test.go`、`index_test.go`、`thumbs_test.go`、`probe_test.go`、`media_handlers_test.go` | 上述模块的用例（含越界请求、并发调度） |
+
+---
+
+## 媒体服务与前端性能硬化（2026-10）
+
+四类问题的处理，细节见 [tg-station/README.md](tg-station/README.md) 的「媒体服务硬化（P2）」与
+「前端网格：性能与显示约定」两节：
+
+- **路径安全**：所有媒体访问统一走 `safeMediaPath`（用 `filepath.Rel` 判目录边界，不用字符串前缀），
+  Windows 上自行解析 junction —— 原先「媒体目录里放一个指向别处的 junction」可以绕过校验。
+- **刷新不丢**：扫描期间收到的刷新请求合并为下一轮补扫（原先被静默丢弃，新下载的文件进不了索引）。
+- **查询变快**：新增日期索引，`/api/files/{date}` 从线性扫描改为直接查表。
+- **缩略图**：缓存键改为「相对路径 + 大小 + mtime」的哈希（旧命名会碰撞）、临时文件校验后原子提交、
+  统一超时；并把响应改为长缓存（前端 URL 带 `?s=<文件大小>`），滚动时不再每格回源。
+- **前端**：万级格子页面改为「块级离屏回收」+ 事件委托，常驻 DOM 从 1.6 万格降到 1~2 千格；
+  视频格子右下角只留一个时长角标，缩略图上不铺任何压暗层。
 
 ---
 

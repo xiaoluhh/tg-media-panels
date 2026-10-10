@@ -164,6 +164,45 @@ Go 端只解析自己需要的字段，其余（api_id、channels、proxy 等）
   `//go:build windows` / `!windows` 分文件（`proc_windows.go` / `proc_other.go`），
   不把 Windows 命令当通用实现；`ShowWindow` 必须从 user32.dll 取（用 kernel32 会在无控制台环境 panic）。
 
+## 媒体服务硬化（P2，2026-10）
+
+针对「路径安全、扫描调度、索引性能、缩略图」四类问题的实现要点：
+
+| 主题 | 实现 | 关键点 |
+|------|------|--------|
+| 路径安全 | `pathsafe.go` + `pathsafe_windows.go` / `pathsafe_other.go` | 所有媒体访问走唯一入口 `safeMediaPath`；用 `filepath.Rel` 做目录边界判断（**不用字符串前缀**，否则 `/media2/a.mp4` 会被 `/media` 放行）；Windows 上自写 `resolveReparsePoints` 解析符号链接与 junction（`filepath.EvalSymlinks` 对 junction 无效）；校验失败返回 403/404 且不回显服务器绝对路径 |
+| 扫描调度 | `scan.go` 的 `scanScheduler` | 单一调度器 + `pending` 标志：扫描期间的新请求合并为**下一轮补扫**，既不丢弃也不并发第二个扫描；缩略图只在「无待补扫」之后基于最新索引生成；`recover` 兜底复位 `running`，避免一次 panic 后刷新永久排队 |
+| 元数据探测 | `probe.go` | 优先 `ffprobe`（只取 duration），无则回退 ffmpeg；统一 `exec.CommandContext` 超时（探测 15s / 缩略图 20s）；时长做合法性检查（排除 NaN/Inf/负数/解析失败）；时长缓存含「路径 + 大小 + mtime」 |
+| 日期索引 | `index.go` | `map[string][]*MediaFile` 与文件列表在**同一把锁**下原子切换；`/api/files/{date}` 不再线性扫描（实测 ~1 万倍提速） |
+| 缩略图 | `thumbs.go` | 缓存键 = `sha256(相对路径 + 大小 + mtime)`（旧算法把 `/` 换成 `_`，`a/b.jpg` 与 `a_b.jpg` 会碰撞；旧命名只读兼容、命中即迁移）；临时文件 → 校验 → `os.Rename` 原子提交；同键单飞 + 并发上限 4 |
+| 缩略图缓存头 | `main.go` 的 `thumbHandler` | `Cache-Control: public, max-age=604800`。文件名已含内容指纹、前端 URL 再带 `?s=<文件大小>`，源文件一变就换名/换 URL，所以可以放心长缓存（此前用 `no-cache`，滚动时每格都回源） |
+
+> Windows 上 `go test -race` 需要 cgo（本机无 gcc 会报 `-race requires cgo`）；这种情况下用
+> 「并发用例 + `-count=N` 重复」作为证据，**不要把没跑成的 race 说成通过**。
+
+## 前端网格：性能与显示约定（static/index.html）
+
+万级缩略图页面的 DOM / 事件策略，改这个文件前先读这节：
+
+- **事件委托**：`touchstart/move/end/click` 只挂在 `#content` 上一次，靠 `closest('.photo-item')` 定位；
+  不要再回到「每个格子挂 4 个监听器」的写法（实测那是节点/监听器泄漏的来源之一）。
+- **块级离屏回收**：同一天的条目按 `GRID_BLOCK = 840`（4~8 列的公倍数，任何列数下都整行收尾）切成多个
+  `.photo-grid`；视口外 ±2500px 的块清空并留等高空占位，滚回来按 `data-index` 重建。
+  常驻 DOM 因此稳定在 1~2 块（约 840–1680 格），**与「滚到多深」无关**。
+- **占位高度用「算」的**：`heightForCount()` 按 列数 / 列宽 / `aspect-ratio` 计算。**不要改成 rect 测量** ——
+  `content-visibility: auto` 会让离屏格子按 `contain-intrinsic-size` 估算，占位偏小、滚动条长度会漂。
+- **回收判断用几何而非 IntersectionObserver**：页面在后台/最小化时 IO 不回调，几何判断不受可见性影响。
+- **需要完整 DOM 的入口**：删除后的增量同步、窗口 resize，先 `restoreAllRecycledSections(true)`
+  （`true` = 同步恢复；滚动路径用 `false` 逐帧恢复）。
+- **回收不参与删除索引计算**：先整体恢复 → `syncGridAfterDelete()`（已改为以块为单元）→ 再重新回收。
+- **视频格子显示**：`.video-overlay` 只是把角标摆到右下角的定位容器，**不铺任何底色**
+  （既无整片黑也无渐变）；右下角 `.video-duration` 显示片长，由 `durText()` 生成（`item.duration > 0` 才输出）。
+- **两处生成点必须同步**：格子 HTML 在 `render()` 与 `sectionItemsHTML()` 各有一份（后者用于离屏块重建），
+  改样式/结构时两处都要改，否则滚回来会「变样」。
+- **不要跨作用域调函数**：`fmt()` 只存在于灯箱作用域，网格渲染处直接调用会 `ReferenceError` 让整页空白
+  （本项目踩过），渲染要用自备的顶层函数。
+- **改完必须整页重载**：`index.html` 走 no-cache，但长时浏览的旧页面已积累状态，需 Ctrl+Shift+R 才干净。
+
 ## 测试
 
 ```bash
@@ -173,6 +212,10 @@ GOOS=linux go vet ./...   # 校验非 Windows 分支
 ```
 
 - 分页用例覆盖：缺省页 / 合法页 / 非整数 / 0 / 负数 / 超过上限 / 整数溢出串 / 超出页数 / 无文件日期。
+- 媒体服务用例：路径安全（`pathsafe_test.go`：`..` 穿越、同前缀兄弟目录、绝对路径、符号链接指向根外/根内、Windows 盘符与保留名）、
+  扫描调度（`scan_sched_test.go`：单次 / 期间一次请求 / 多次请求合并 / 二轮扫描 / 失败后仍可刷新 / 并发下不双跑）、
+  日期索引（`index_test.go`）、缩略图（`thumbs_test.go`）、元数据探测（`probe_test.go`）、越界请求（`media_handlers_test.go`）。
+  符号链接用例在无权限创建链接的环境会 skip；Windows 下可用 `cmd /c mklink /J` 建 junction 实测。
 - 下载器协议用例用 `testdata/mockcli`（一个 Go 写的假 CLI）模拟正常 JSON、空输出、非零退出码、
   非法 JSON、超时与回退，**不需要 Telegram 账号，也不触碰真实 session**。
 - 构建出 `dist/tg_downloader_cli.exe` 后，`TestRealCliExeOutputsJSON` 会真的驱动它并解析 stdout；

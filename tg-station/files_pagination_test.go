@@ -21,7 +21,7 @@ func seedIndex(t *testing.T, counts map[string]int) {
 	indexMutex.Unlock()
 	t.Cleanup(func() {
 		indexMutex.Lock()
-		mediaIndex = old
+		rebuildIndexLocked(old)
 		indexMutex.Unlock()
 	})
 
@@ -45,9 +45,9 @@ func seedIndex(t *testing.T, counts map[string]int) {
 	for i, j := 0, len(idx)-1; i < j; i, j = i+1, j-1 {
 		idx[i], idx[j] = idx[j], idx[i]
 	}
-	indexMutex.Lock()
-	mediaIndex = idx
-	indexMutex.Unlock()
+	// 通过索引重建入口写入：文件列表与日期索引必须同步切换
+	// （/api/files/{date} 现在直接查日期索引，单独改 mediaIndex 已不足以生效）
+	rebuildIndex(idx)
 }
 
 type filesResp struct {
