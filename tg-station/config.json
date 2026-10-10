@@ -1,0 +1,46 @@
+{
+  "api_hash": "PUT_YOUR_OWN_API_HASH_HERE",
+  "api_id": 0,
+  "channels": [
+    "PUT_YOUR_CHANNEL_ID"
+  ],
+  "concurrency": 4,
+  "idle_stop_minutes": 30,
+  "download_dir": "media",
+  "download_history": false,
+  "include_forwarded": true,
+  "login_method": "qr",
+  "max_file_size_mb": 8192,
+  "media_browser": {
+    "exe": "",
+    "index_path": "",
+    "port": 8080,
+    "workdir": ""
+  },
+  "name_list_file": "mz.txt",
+  "only_forwarded": true,
+  "proxy": {
+    "host": "127.0.0.1",
+    "port": 7897,
+    "type": "socks5"
+  },
+  "retries": 3,
+  "session": "tg_session",
+  "skip_gif": true,
+  "station": {
+    "python": "",
+    "script": "",
+    "downloader_exe": "",
+    "media_dir": "",
+    "auto_start": false
+  },
+  "twofa_password": "",
+  "types": [
+    "photo",
+    "video",
+    "document"
+  ],
+  "catchup_today": true,
+  "catchup_since": "",
+  "movie_min_minutes": 5
+}

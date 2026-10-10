@@ -1,0 +1,54 @@
+# 编译/打包产物
+*.exe
+!tg_downloader.spec
+build/
+dist/
+.gocache/
+__pycache__/
+*.pyc
+
+# 运行数据与状态（部署目录才是权威，仓库里不跟踪）
+media_index.json
+dl_status.json
+progress.json
+cancel.json
+pause.json
+tg_station.log
+station_stdout.log
+station_stderr.log
+downloader_stdout.log
+downloader_stderr.log
+login_status.json
+downloads.db
+thumbs/
+qr_login.png
+
+# Telethon 会话（含登录凭据，绝不入库）
+tg_session.session
+tg_session.session-journal
+tg_session.authorized
+
+# 一次性脚本的产物 / 备份
+*_log.txt
+config.json.bak_*
+*.bak_*
+_gen.log
+_pyinstaller.log
+
+# 交叉编译产物（体积大，按需本地生成）
+pi_deploy/media-browser-linux-arm
+pi_deploy/tg_station
+tg_station_linux_arm64
+media-browser
+media-browser.exe
+# 带版本号的旧 exe（*.exe 已忽略，这里显式列出历史误入库的）
+tg_station_new_v203.exe
+tg_station_v204.exe
+tg_station_old_*.exe
+
+# 一次性迁移脚本（mihomo 订阅时代与早期部署辅助，已完成使命）
+_apply_and_start.py
+_apply_and_start.ps1
+_launch_detached.ps1
+_count_proxies.py
+_fixtest.py

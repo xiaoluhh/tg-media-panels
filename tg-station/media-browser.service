@@ -1,0 +1,16 @@
+[Unit]
+Description=TG Station (媒体浏览 + 下载器管理)
+After=network.target
+
+[Service]
+Type=simple
+# 用户名/路径按树莓派实际部署调整（pi_deploy 同步目录）
+User=lat
+WorkingDirectory=/home/lat/tgstation
+# 注意：媒体目录与下载器 exe 由 config.json 决定，这里只作为 flag 兜底
+ExecStart=/home/lat/tgstation/tg_station -config /home/lat/tgstation/config.json -dir /media/lat/disk/tg -port 8080
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

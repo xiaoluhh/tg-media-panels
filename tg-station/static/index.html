@@ -1,0 +1,2898 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN"><head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#111111">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="媒体浏览器">
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="icon" href="/static/icon.svg">
+    <title>媒体浏览器</title>
+    <style>
+        /* ================= 设计变量 =================
+           统一收敛散落的硬编码颜色；每个变量的值与原先一一对应，
+           因此这次改动视觉零变化。后续调主题只改这里。 */
+        :root {
+            /* 背景与面 */
+            --bg-page:      #111111;
+            --bg-panel:     #18181b;
+            --bg-raised:    #1c1c1e;
+            --bg-inset:     #1a1a1a;
+            --bg-field:     #242428;
+            --bg-solid:     #000000;
+            --bg-white:     #ffffff;
+
+            /* 边框 */
+            --border:       #2a2a2a;
+            --border-field: #3a3a3f;
+            --border-strong:#333333;
+
+            /* 文字 */
+            --fg:           #ffffff;
+            --fg-1:         #eeeeee;
+            --fg-2:         #dddddd;
+            --fg-3:         #aaaaaa;
+            --fg-4:         #999999;
+            --fg-5:         #888888;
+            --fg-6:         #666666;
+            --fg-7:         #555555;
+
+            /* 控件 */
+            --btn:          #333333;
+            --btn-hover:    #444444;
+
+            /* 品牌与强调 */
+            --brand-1:      #667eea;
+            --brand-2:      #764ba2;
+            --brand-soft:   #8b9dff;
+            --accent-1:     #f7971e;
+            --accent-2:     #ffd200;
+            --accent-glow:  rgba(255, 210, 0, 0.25);
+
+            /* 语义色 */
+            --ok:           #22c55e;
+            --ok-glow:      rgba(34,197,94,0.5);
+            --warn:         #f59e0b;
+            --danger:       #ef4444;
+            --danger-1:     #e74c3c;
+            --danger-2:     #c0392b;
+            --danger-dark:  #dc2626;
+            --danger-soft:  #f87171;
+            --danger-soft-bg: rgba(248,113,113,.15);
+            --danger-glow:  rgba(231,76,60,0.4);
+            --danger-80:    rgba(231,76,60,0.8);
+            --danger-100:   rgba(231,76,60,1);
+
+            /* 半透明层 */
+            --scrim-header: rgba(17,17,17,0.95);
+            --scrim-topbar: rgba(17,17,17,0.92);
+            --scrim-panel:  rgba(17,17,17,0.85);
+            --overlay:      rgba(0,0,0,0.5);
+            --scrim-toast:  rgba(0,0,0,0.85);
+            --overlay-modal:rgba(0,0,0,0.6);
+            --scrim-lightbox:rgba(0,0,0,0.98);
+            --veil:         rgba(0,0,0,0.4);
+            --veil-soft:    rgba(0,0,0,0.3);
+            --veil-fade:    rgba(0,0,0,0.8);
+            --w-10:         rgba(255,255,255,0.1);
+            --w-20:         rgba(255,255,255,0.2);
+            --w-25:         rgba(255,255,255,0.25);
+            --w-30:         rgba(255,255,255,0.3);
+            --w-50:         rgba(255,255,255,0.5);
+            --w-90:         rgba(255,255,255,0.9);
+            --brand-tint:   rgba(102,126,234,0.2);
+
+            /* 布局尺寸（第 2 阶段新增，集中管理便于调） */
+            --grid-gap:     2px;   /* 网格细缝：让相邻图有边界；不改 1:1 裁切比例 */
+            --grid-radius:  6px;   /* 每格圆角 */
+            --pad-top:      20px;  /* 容器上内边距（吸顶定位要减掉它，单位必须在变量里） */
+            --header-h:     56px;  /* 筛选栏高度，由 JS 实测后覆盖 */
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        /* 手机上长按不要弹"保存图片/在新标签页打开/复制"这类系统菜单，也不出现选中高亮。
+           输入框/文本域例外——否则设置里的名单编辑器、各字段没法选中和定位光标。 */
+        * { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+        input, textarea, select, [contenteditable] { -webkit-user-select: text; user-select: text; }
+        html, body { height: 100%; }
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: var(--bg-page); color: var(--fg); overflow-x: hidden; }
+        .install-banner {
+            display: none;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(135deg, var(--brand-1), var(--brand-2));
+            padding: 15px 20px;
+            /* 必须低于灯箱(1000)。原先是 9999：手机上这条“安装到主屏幕”横幅
+               盖住了灯箱底部的视频控制条，所有点击都被它吞掉（表现为“按钮点了没反应”）。 */
+            z-index: 900;
+            box-shadow: 0 -5px 20px var(--veil-soft);
+        }
+        .install-banner.show { display: flex; align-items: center; justify-content: space-between; }
+        .install-banner-content { display: flex; align-items: center; gap: 15px; }
+        .install-icon { font-size: 36px; }
+        .install-text h3 { font-size: 16px; font-weight: 600; }
+        .install-text p { font-size: 13px; opacity: 0.9; }
+        .install-btn {
+            padding: 10px 20px;
+            background: var(--fg);
+            color: var(--brand-1);
+            border: none;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .install-close {
+            background: none;
+            border: none;
+            color: var(--fg);
+            font-size: 24px;
+            cursor: pointer;
+        }
+        .container { padding: 20px; max-width: 1600px; margin: 0 auto; }
+        .header { display: flex; align-items: center; gap: 20px; margin-bottom: 18px; flex-wrap: wrap; position: sticky; top: 0; z-index: 800; background: var(--bg-page); backdrop-filter: blur(8px); padding: 12px 0; border-bottom: 1px solid transparent; }
+        /* 页面滚动后给粘性头部加一条分隔线，避免与内容"糊"在一起 */
+        .header.stuck { border-bottom-color: var(--border); }
+        .filter-btns { display: flex; gap: 10px; }
+        .filter-btn {
+            padding: 10px 24px;
+            background: var(--btn);
+            border: none;
+            color: var(--fg-5);
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+        .filter-btn:hover { background: var(--btn-hover); color: var(--fg); }
+        .filter-btn.active { background: linear-gradient(135deg, var(--brand-1), var(--brand-2)); color: var(--fg); }
+        .filter-btn.movie-entry { background: linear-gradient(135deg, var(--accent-1), var(--accent-2)); color: var(--bg-page); box-shadow: 0 2px 12px var(--accent-glow); }
+        .filter-btn.movie-entry:hover { filter: brightness(1.1); }
+        .action-btns { display: flex; gap: 10px; margin-left: auto; }
+        .action-btn { 
+            padding: 10px 20px; 
+            background: var(--btn); 
+            border: none; 
+            color: var(--fg-5); 
+            border-radius: 20px; 
+            cursor: pointer; 
+            font-size: 14px; 
+            font-weight: 600; 
+            transition: all 0.2s ease; 
+        }
+        .action-btn:hover { background: var(--btn-hover); color: var(--fg); }
+        .action-btn.active { background: linear-gradient(135deg, var(--brand-1), var(--brand-2)); color: var(--fg); }
+
+        /* 多选：已选数量角标 + 一键清空 */
+        .sel-badge {
+            display: inline-flex; align-items: center;
+            padding: 4px 12px; border-radius: 14px;
+            background: var(--brand-tint); color: var(--brand-soft);
+            font-size: 12.5px; font-weight: 600; white-space: nowrap;
+        }
+        .sel-clear {
+            padding: 4px 10px; border-radius: 14px; cursor: pointer;
+            background: transparent; border: 1px solid var(--border-field);
+            color: var(--fg-3); font-size: 12.5px; font-weight: 600;
+            transition: all .15s ease;
+        }
+        .sel-clear:hover { border-color: var(--danger); color: var(--danger-soft); background: var(--danger-soft-bg); }
+        
+        /* 标题行选择按钮 */
+        #selectModeBtn { 
+            background: linear-gradient(135deg, var(--brand-1), var(--brand-2)); 
+            color: var(--fg);
+        }
+        #selectModeBtn:hover { transform: scale(1.05); }
+        
+        /* 右下角删除按钮 */
+        #deleteBtn { 
+            position: fixed; 
+            bottom: 20px; 
+            right: 20px; 
+            z-index: 1000; 
+            background: linear-gradient(135deg, var(--danger-1), var(--danger-2)); 
+            color: var(--fg);
+            padding: 8px 16px;
+            border-radius: 18px;
+            box-shadow: 0 4px 12px var(--danger-glow);
+            font-size: 14px;
+        }
+        #deleteBtn:hover { transform: scale(1.05); }
+        .date-section { margin-bottom: 30px; }
+        /* 日期标题吸顶：滚动时当前日期贴在筛选栏下方，长列表里不迷路。
+           --header-h 由 JS 按筛选栏实际高度写入。sticky 的 top 直接取该高度，
+           不减容器内边距（实测减了会往上贴 20px、被筛选栏压住）。 */
+        .date-header {
+            font-size: 18px; font-weight: 600; padding: 12px 0; color: var(--fg-5);
+            display: flex; align-items: center; gap: 10px;
+            position: sticky; top: var(--header-h, 56px); z-index: 5;
+            background: var(--bg-page);
+        }
+        .photo-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: var(--grid-gap); }
+        /* content-visibility:auto —— 屏幕外的格子跳过布局与绘制。媒体库里 1 万多个
+           格子时，这是“关闭灯箱就卡住/整页卡死”的主因（要绘制上万个格子）。
+           aspect-ratio 已经决定了盒子高度，不会引起滚动条跳动。 */
+        .photo-item { aspect-ratio: 1; overflow: hidden; cursor: pointer; background: var(--bg-inset); position: relative; user-select: none; transition: transform 0.1s ease; border-radius: var(--grid-radius); content-visibility: auto; contain-intrinsic-size: auto 160px; }
+        .photo-item:active { transform: scale(0.95); }
+        .photo-item.long-press { transform: scale(0.9); opacity: 0.7; }
+        .photo-item img { width: 100%; height: 100%; object-fit: cover; image-rendering: -webkit-optimize-contrast; }
+        .photo-item.selected { outline: 3px solid var(--brand-1); z-index: 10; }
+        .photo-item.selected::after {
+            content: '✓';
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 30px;
+            height: 30px;
+            background: var(--brand-1);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: bold;
+            z-index: 20;
+        }
+        .video-overlay {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--veil);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+        }
+        .play-indicator {
+            width: 40px;
+            height: 40px;
+            background: var(--w-90);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            color: var(--bg-page);
+        }
+        .play-indicator::before { content: '▶'; margin-left: 3px; }
+        .lightbox { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--scrim-lightbox); display: none; justify-content: center; align-items: center; z-index: 1000; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+        .lightbox.active { display: flex; }
+        .lightbox-content { position: relative; width: 95vw; height: 90vh; display: flex; align-items: center; justify-content: center; background: var(--bg-solid); }
+        .lightbox-content img { max-width: 100%; max-height: 100%; object-fit: contain; cursor: zoom-in; }
+        .lightbox-content video { width: 100%; height: 100%; object-fit: contain; }
+        .lightbox-content img.zoomed { cursor: zoom-out; }
+        /* ---- 自定义视频控制条 ---- */
+        .video-controls {
+            position: absolute; bottom: 0; left: 0; right: 0;
+            background: linear-gradient(transparent, var(--veil-fade));
+            padding: 30px 16px 12px;
+            opacity: 0; pointer-events: none;
+            display: flex;
+            align-items: center; gap: 10px;
+            z-index: 1020;
+            transition: opacity 0.3s;
+        }
+        .video-controls.visible { opacity: 1; pointer-events: auto; }
+        .video-controls .vc-time {
+            color: var(--fg); font-size: 13px; font-family: monospace;
+            flex-shrink: 0; min-width: 90px; text-align: center;
+        }
+        .video-controls .vc-seek {
+            position: relative; flex: 1; height: 20px;
+            display: flex; align-items: center; cursor: pointer;
+            touch-action: none;
+        }
+        .video-controls .vc-seek-track {
+            position: relative; width: 100%; height: 6px;
+            background: var(--w-20); border-radius: 3px; overflow: hidden;
+        }
+        .video-controls .vc-buf {
+            position: absolute; left: 0; top: 0; height: 100%; width: 0;
+            background: var(--w-50); border-radius: 3px;
+        }
+        .video-controls .vc-fill {
+            position: absolute; left: 0; top: 0; height: 100%; width: 0;
+            background: var(--accent-1); border-radius: 3px;
+        }
+        .video-controls .vc-thumb {
+            position: absolute; top: 50%; left: 0;
+            width: 14px; height: 14px; margin-left: -7px;
+            transform: translateY(-50%); border-radius: 50%;
+            background: var(--fg); box-shadow: 0 0 6px var(--overlay);
+            pointer-events: none;
+        }
+        .video-controls .vc-tip {
+            position: absolute; bottom: 22px; left: 0;
+            transform: translateX(-50%);
+            background: var(--scrim-toast); color: var(--fg);
+            font-size: 12px; padding: 3px 8px; border-radius: 6px;
+            white-space: nowrap; pointer-events: none;
+            opacity: 0; transition: opacity 0.15s;
+        }
+        .video-controls .vc-tip.show { opacity: 1; }
+        .video-controls .vc-vol {
+            width: 60px; height: 6px; flex-shrink: 0;
+            -webkit-appearance: none; appearance: none;
+            background: var(--w-20); border-radius: 3px;
+            outline: none; cursor: pointer;
+        }
+        .video-controls .vc-vol::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 14px; height: 14px;
+            border-radius: 50%; background: var(--fg);
+            box-shadow: 0 0 6px var(--overlay); cursor: pointer;
+        }
+        .video-controls .vc-vol::-moz-range-thumb {
+            width: 14px; height: 14px; border-radius: 50%;
+            background: var(--fg); border: none; cursor: pointer;
+        }
+        .video-controls .vc-full {
+            width: 36px; height: 36px; flex-shrink: 0;
+            background: var(--w-90); border: none; border-radius: 50%;
+            cursor: pointer; font-size: 15px; color: var(--bg-page);
+            display: flex; align-items: center; justify-content: center;
+        }
+        .vc-loading {
+            position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+            z-index: 1021; pointer-events: none; opacity: 0; transition: opacity 0.2s;
+        }
+        .vc-loading .lb-spinner {
+            width: 40px; height: 40px; border-radius: 50%;
+            border: 3px solid var(--w-20); border-top-color: var(--w-90);
+            animation: spin 0.8s linear infinite;
+        }
+        .vc-loading.show { opacity: 1; }
+        /* 长按临时倍速的提示：底部居中大字。
+           长按触发时显示，1 秒后自动隐藏（松手也会立即隐藏）。 */
+        .vc-fast {
+            position: absolute; left: 50%; bottom: 76px; transform: translateX(-50%);
+            z-index: 1021; pointer-events: none; opacity: 0; transition: opacity 0.2s;
+            color: var(--fg); text-shadow: 0 2px 10px var(--scrim-toast);
+            font-size: 26px; font-weight: 700; letter-spacing: 1px;
+            white-space: nowrap;
+        }
+        .vc-fast.show { opacity: 1; }
+        /* 移动端更大的拖拽点 */
+        @media (max-width: 900px) {
+            .video-controls { gap: 6px; padding: 26px 10px 10px; }
+            .video-controls .vc-seek { height: 24px; }
+            .video-controls .vc-seek-track { height: 8px; }
+            .video-controls .vc-thumb { width: 20px; height: 20px; margin-left: -10px; }
+            .video-controls .vc-vol { display: none; }
+            .video-controls .vc-time { min-width: 0; font-size: 11px; }
+        }
+        /* ===== 触屏 / 窄屏：把控制条做成"手指够用"的尺寸 =====
+           实测原尺寸：按钮 30~36px、滑块 14~20px、轨道 6~8px，
+           全部远低于触控舒适下限（Apple 44px / Material 48px）。
+           这里放到 44px；进度条用"触区 44px + 轨道 10px + 滑块 26px"，
+           条本身不会显得笨重。桌面（非触屏、>900px）完全不受影响。 */
+        @media (max-width: 900px), (hover: none) and (pointer: coarse) {
+            /* 底边距 12px -> 30px：原来进度条（滑块 26px）几乎贴在画面底边，
+               和底部区域挤在一起；抬高后不再重叠、也更好按。 */
+            .video-controls { gap: 8px; padding: 30px 12px 30px; }
+            /* 确保覆盖上面那条 max-width:900px（它把底边距设成 10px） */
+            .video-controls.vc-touch { padding-bottom: 30px; }
+            .video-controls .vc-full { width: 44px; height: 44px; font-size: 18px; }
+            /* 触区 44px，但视觉上还是一条细进度条 */
+            .video-controls .vc-seek { height: 44px; }
+            .video-controls .vc-seek-track { height: 10px; border-radius: 5px; }
+            .video-controls .vc-thumb {
+                width: 26px; height: 26px; margin-left: -13px;
+                box-shadow: 0 0 8px var(--overlay);
+            }
+            .video-controls .vc-time { min-width: 0; font-size: 12.5px; }
+            /* 音量滑块（>900px 的触屏平板仍会显示）拖动圆点也放大 */
+            .video-controls .vc-vol::-webkit-slider-thumb { width: 20px; height: 20px; }
+            .video-controls .vc-vol::-moz-range-thumb { width: 20px; height: 20px; }
+        }
+        .video-error { text-align: center; color: var(--fg-5); padding: 20px; }
+        .video-error button { margin-top: 10px; padding: 10px 20px; background: var(--btn); border: none; color: var(--fg); border-radius: 8px; cursor: pointer; }
+        .lightbox-close { position: fixed; top: 20px; right: 20px; width: 50px; height: 50px; background: var(--w-20); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 32px; color: var(--fg); cursor: pointer; transition: all 0.2s; z-index: 1010; }
+        .lightbox-close:hover { background: var(--w-30); transform: scale(1.1); }
+        /* 翻页键：默认（手机/触屏）保持大圆钮好点按；桌面端缩小并改为"鼠标滑到两侧才出现" */
+        .lightbox-nav {
+            position: fixed; top: 50%; transform: translateY(-50%);
+            width: 55px; height: 55px; background: var(--w-10); border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 28px; color: var(--fg); cursor: pointer;
+            transition: background 0.2s, opacity 0.25s ease; z-index: 1010;
+        }
+        .lightbox-nav:hover { background: var(--w-20); }
+        .lightbox-nav.prev { left: 10px; }
+        .lightbox-nav.next { right: 10px; }
+        /* 桌面端：翻页键默认隐藏，鼠标移到画面两侧才淡入。
+           两侧各铺一条透明热区（.nav-hotzone），鼠标进入即显示；
+           翻页键本身在热区里，所以移过去点击不会闪没。
+           同时 JS 用 mousemove 兜底（热区在某些布局下可能被覆盖）。 */
+        .nav-hotzone { display: none; }
+        @media (min-width: 901px) {
+            .lightbox-nav {
+                width: 84px; height: 84px; font-size: 40px;
+                opacity: 0; visibility: hidden; pointer-events: none;
+            }
+            .lightbox-nav.prev { left: 16px; }
+            .lightbox-nav.next { right: 16px; }
+            /* 鼠标在任一侧热区、或 JS 判定靠近边缘时显示 */
+            .lightbox:has(.nav-hotzone:hover) .lightbox-nav,
+            .lightbox.nav-near .lightbox-nav {
+                opacity: 1; visibility: visible; pointer-events: auto;
+            }
+            .nav-hotzone {
+                display: block; position: fixed; top: 0; bottom: 0; width: 110px;
+                z-index: 1005;
+            }
+            .nav-hotzone.prev { left: 0; }
+            .nav-hotzone.next { right: 0; }
+        }
+        .lightbox-counter { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); color: var(--fg); font-size: 16px; background: var(--overlay); padding: 8px 16px; border-radius: 20px; z-index: 1010; }
+        .lightbox-delete { 
+            position: fixed; 
+            top: 20px; 
+            right: 80px; 
+            width: 50px; 
+            height: 50px; 
+            background: var(--danger-80); 
+            border-radius: 50%; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            font-size: 28px; 
+            cursor: pointer; 
+            transition: all 0.3s ease; 
+            z-index: 1010;
+            box-shadow: 0 4px 12px var(--danger-glow);
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+            touch-action: manipulation;
+        }
+        /* 桌面端：删除按钮在右侧翻页键正上方，与翻页键同轴。
+           翻页键 84px、垂直居中（top:50% translateY(-50%)）、right:16px。
+           - 垂直：翻页键上边缘在 50%-42px；删除键 56px 高、留 10px 间距，
+             故其上边缘 = (50%-42px) - 10px - 56px = 50% - 108px。
+           - 水平：两者宽度不同（56 vs 84），光靠 right 相同只是右边缘对齐；
+             要让中点重合需 right = 16px + (84-56)/2 = 30px。 */
+        @media (min-width: 901px) {
+            .lightbox-delete {
+                right: 30px;
+                top: calc(50% - 108px);
+                transform: none;
+                width: 56px;
+                height: 56px;
+                font-size: 26px;
+            }
+            .lightbox-delete:hover { transform: scale(1.1); }
+        }
+        .lightbox-delete:hover { 
+            background: var(--danger-100); 
+            transform: scale(1.1); 
+        }
+        /* 灯箱图片加载进度 */
+        .lightbox-loading {
+            position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+            display: flex; flex-direction: column; align-items: center; gap: 10px;
+            color: var(--w-50); font-size: 13px; z-index: 1005; pointer-events: none;
+        }
+        .lightbox-loading .lb-spinner {
+            width: 34px; height: 34px; border-radius: 50%;
+            border: 3px solid var(--w-20); border-top-color: var(--w-90);
+            animation: spin 0.8s linear infinite;
+        }
+        .delete-toast { position: fixed; top: 15%; left: 50%; transform: translate(-50%, 0); background: var(--scrim-toast); color: var(--fg); padding: 16px 32px; border-radius: 12px; font-size: 18px; font-weight: 600; z-index: 2000; opacity: 0; pointer-events: none; transition: opacity 0.3s ease; }
+        .delete-toast.show { opacity: 1; }
+        /* ===== 错误弹窗（替代 alert） ===== */
+        .err-toast {
+            position: fixed; top: 16px; left: 50%;
+            transform: translate(-50%, -140%);
+            max-width: min(92vw, 560px);
+            display: flex; align-items: flex-start; gap: 12px;
+            padding: 14px 16px; border-radius: 12px;
+            background: rgba(40,20,22,0.98); backdrop-filter: blur(10px);
+            border: 1px solid rgba(239,68,68,0.5);
+            box-shadow: 0 12px 32px rgba(0,0,0,0.55);
+            color: var(--fg-2); z-index: 3200;
+            opacity: 0; pointer-events: none;
+            transition: transform .28s cubic-bezier(.2,.9,.3,1.2), opacity .28s ease;
+        }
+        .err-toast.show { transform: translate(-50%, 0); opacity: 1; pointer-events: auto; }
+        .err-toast .err-icon { font-size: 20px; line-height: 1.3; flex-shrink: 0; }
+        .err-toast .err-text { flex: 1; min-width: 0; }
+        .err-toast .err-title { font-size: 14px; font-weight: 700; color: var(--danger-soft); margin-bottom: 3px; }
+        .err-toast .err-msg { font-size: 13px; line-height: 1.55; color: var(--fg-2); word-break: break-word; white-space: pre-wrap; }
+        .err-toast .err-close {
+            flex-shrink: 0; background: none; border: none; color: var(--fg-5);
+            font-size: 22px; line-height: 1; cursor: pointer; padding: 0 2px;
+        }
+        .err-toast .err-close:hover { color: var(--fg); }
+        /* ===== 确认弹窗（替代 confirm） ===== */
+        .confirm-overlay {
+            position: fixed; inset: 0; z-index: 3300;
+            display: none; align-items: center; justify-content: center;
+            background: var(--overlay-modal); backdrop-filter: blur(3px); padding: 20px;
+        }
+        .confirm-overlay.show { display: flex; }
+        .confirm-box {
+            width: min(92vw, 400px); padding: 20px;
+            background: var(--bg-panel); border: 1px solid var(--border-field);
+            border-radius: 14px; box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+            animation: confirmIn .18s ease;
+        }
+        @keyframes confirmIn { from { transform: scale(.94); opacity: 0; } to { transform: none; opacity: 1; } }
+        .confirm-title { font-size: 16px; font-weight: 700; color: var(--fg-1); margin-bottom: 8px; }
+        .confirm-msg { font-size: 13.5px; line-height: 1.6; color: var(--fg-3); white-space: pre-wrap; word-break: break-word; }
+        .confirm-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+        .confirm-btn {
+            padding: 9px 20px; border-radius: 10px; border: none; cursor: pointer;
+            font-size: 14px; font-weight: 600; transition: all .15s ease;
+        }
+        .confirm-btn.ghost { background: var(--btn); color: var(--fg-2); }
+        .confirm-btn.ghost:hover { background: var(--btn-hover); color: var(--fg); }
+        .confirm-btn.danger { background: linear-gradient(135deg, var(--danger-1), var(--danger-2)); color: var(--fg); }
+        .confirm-btn.danger:hover { filter: brightness(1.12); }
+
+        .select-hint { background: var(--brand-tint); padding: 8px 16px; border-radius: 20px; font-size: 14px; }
+        .zoom-hint { background: var(--brand-tint); padding: 8px 16px; border-radius: 20px; font-size: 14px; margin-left: auto; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @media (max-width: 1400px) { .photo-grid { grid-template-columns: repeat(7, 1fr); } }
+        @media (max-width: 1200px) { .photo-grid { grid-template-columns: repeat(6, 1fr); } }
+        @media (max-width: 900px) { .photo-grid { grid-template-columns: repeat(5, 1fr); } .play-indicator { width: 32px; height: 32px; } }
+        @media (max-width: 600px) { 
+            .photo-grid { grid-template-columns: repeat(4, 1fr); } 
+            :root { --grid-radius: 4px; --pad-top: 15px; }
+            .filter-btn { padding: 8px 16px; font-size: 14px; } 
+            .action-btn { padding: 8px 16px; font-size: 14px; }
+            .play-indicator { width: 28px; height: 28px; font-size: 14px; } 
+            .lightbox-close { width: 45px; height: 45px; font-size: 26px; top: 15px; right: 15px; }
+            .lightbox-nav { width: 55px; height: 55px; font-size: 28px; }
+            .lightbox-nav.prev { left: 10px; }
+            .lightbox-nav.next { right: 10px; }
+            .container { padding: 15px; }
+            .header { gap: 10px; }
+        }
+        /* ================= TG Station 整合 UI ================= */
+        .station-topbar {
+            flex-basis: 100%; height: 52px;
+            background: var(--scrim-topbar); backdrop-filter: blur(10px);
+            border: 1px solid var(--border); border-radius: 12px;
+            display: flex; align-items: center; gap: 12px; padding: 0 16px;
+            margin-top: 8px;
+        }
+        .topbar-title { font-size: 16px; font-weight: 700; white-space: nowrap; }
+        /* 页面版本标识：用于快速判断浏览器加载的是新版还是缓存旧版。
+           数字 = 本文件大小(KB) + 内联脚本总字节数，改一次就变一次。 */
+        .build-stamp {
+            font-size: 10.5px; font-weight: 500; color: var(--fg-6);
+            margin-left: 6px; letter-spacing: 0.2px; cursor: help;
+        }
+        .topbar-status { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--fg-3); flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--fg-7); flex-shrink: 0; }
+        .status-dot.on { background: var(--ok); box-shadow: 0 0 8px var(--ok-glow); }
+        .status-dot.off { background: var(--danger); }
+        .status-dot.busy { background: var(--warn); }
+        .topbar-actions { display: flex; gap: 8px; }
+        .topbar-btn {
+            padding: 7px 14px; background: var(--btn); border: none; color: var(--fg-2);
+            border-radius: 16px; cursor: pointer; font-size: 13px; font-weight: 600;
+            transition: all 0.2s ease;
+        }
+        .topbar-btn:hover { background: var(--btn-hover); color: var(--fg); }
+        .topbar-btn.primary { background: linear-gradient(135deg, var(--brand-1), var(--brand-2)); color: var(--fg); }
+        .topbar-btn.primary:hover { filter: brightness(1.15); }
+
+        /* ===== 下载进度面板 =====
+           从顶部挪到右下角悬浮：翻到页面任何位置都能看到下载进度。
+           无任务时自动隐藏（JS 控制 .show）。 */
+        .download-panel {
+            position: fixed; right: 20px; bottom: 96px; width: 340px;
+            max-height: min(60vh, 460px); overflow: hidden auto;
+            background: rgba(24,24,27,0.96); backdrop-filter: blur(12px);
+            border: 1px solid var(--border-strong); border-radius: 14px;
+            padding: 12px 14px; font-size: 13px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5); z-index: 940;
+            opacity: 0; transform: translateY(8px); pointer-events: none;
+            transition: opacity .2s ease, transform .2s ease;
+        }
+        .download-panel.show { opacity: 1; transform: none; pointer-events: auto; }
+        .dl-title { font-weight: 700; margin-bottom: 8px; color: var(--fg-1); }
+        .dl-header {
+            display: flex; align-items: center; gap: 8px;
+            font-weight: 700; color: var(--fg-1); cursor: pointer;
+            user-select: none; padding: 2px 0;
+        }
+        .dl-header:hover { color: var(--fg); }
+        .dl-summary { font-weight: 400; font-size: 12px; color: var(--fg-5); }
+        /* 总进度 / 速度 / 剩余时间 */
+        .dl-meta { margin-top: 8px; display: flex; flex-direction: column; gap: 5px; }
+        .dl-meta-row { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; color: var(--fg-5); }
+        .dl-meta-row b { color: var(--fg-2); font-weight: 600; }
+        .dl-overall-bar { height: 8px; background: var(--btn); border-radius: 4px; overflow: hidden; }
+        .dl-overall-fill { height: 100%; background: linear-gradient(90deg, var(--brand-1), var(--brand-2)); border-radius: 4px; transition: width .5s; }
+        .dl-done {
+            margin-top: 8px; padding: 8px 10px; border-radius: 8px; font-size: 12.5px;
+            background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.35);
+            color: var(--ok); text-align: center; font-weight: 600;
+        }
+        .dl-stop-btn {
+            margin-left: auto;
+            background: var(--danger-dark); color: var(--fg); border: none; border-radius: 6px;
+            font-size: 11px; padding: 3px 10px; cursor: pointer; font-weight: 600;
+        }
+        .dl-stop-btn:hover { background: var(--danger); }
+        .dl-task-actions { display: flex; justify-content: flex-end; margin-top: 2px; }
+        .dl-cancel-btn {
+            background: transparent; color: var(--danger-soft); border: 1px solid var(--danger-soft);
+            border-radius: 5px; font-size: 10px; padding: 1px 8px; cursor: pointer;
+        }
+        .dl-cancel-btn:hover { background: var(--danger-soft-bg); }
+        .dl-arrow { margin-left: 4px; color: var(--fg-6); font-size: 12px; transition: transform .2s; }
+        .dl-arrow.open { transform: rotate(90deg); }
+        .dl-task { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+        .dl-task-head { display: flex; justify-content: space-between; gap: 8px; color: var(--fg-2); }
+        .dl-task-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .dl-task-pct { color: var(--ok); font-weight: 600; white-space: nowrap; }
+        .dl-bar { height: 6px; background: var(--btn); border-radius: 3px; overflow: hidden; }
+        .dl-bar-fill { height: 100%; background: linear-gradient(90deg, var(--brand-1), var(--brand-2)); border-radius: 3px; transition: width .5s; }
+        .dl-recent-title { font-weight: 700; margin: 6px 0 6px; color: var(--fg-1); }
+        .dl-recent { display: flex; flex-direction: column; gap: 4px; }
+        .dl-recent-item { display: flex; gap: 8px; color: var(--fg-3); }
+        .dl-recent-time { color: var(--fg-6); white-space: nowrap; }
+        .dl-recent-file { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .dl-empty { color: var(--fg-5); padding: 4px 0; }
+        @media (max-width: 640px) {
+            /* 小屏：悬浮卡收成底部小胶囊，避免遮住大片内容 */
+            .download-panel {
+                right: 12px; left: 12px; bottom: 12px; width: auto;
+                max-height: 40vh; padding: 10px 12px; font-size: 12px;
+                border-radius: 12px;
+            }
+            /* 小屏折叠时只留标题行，点一下展开 */
+            .download-panel:not(.expanded) .dl-meta,
+            .download-panel:not(.expanded) .dl-body { display: none; }
+        }
+
+        .station-fab {
+            position: fixed; right: 20px; bottom: 24px; width: 56px; height: 56px;
+            border-radius: 50%; background: linear-gradient(135deg, var(--brand-1), var(--brand-2));
+            display: flex; align-items: center; justify-content: center;
+            font-size: 22px; color: var(--fg); cursor: pointer; z-index: 950;
+            box-shadow: 0 4px 16px var(--veil); user-select: none;
+            -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+        }
+        .station-fab:active { transform: scale(0.92); }
+        /* 下载悬浮卡出现时，悬浮球上移避让，二者不重叠 */
+        body.dl-open .station-fab { bottom: 300px; }
+        body.dl-open .fab-menu { bottom: 364px; }
+        .station-fab, .fab-menu { transition: bottom .2s ease; }
+        .station-fab .fab-dot {
+            position: absolute; top: 2px; right: 2px; width: 14px; height: 14px;
+            border-radius: 50%; border: 2px solid var(--bg-inset);
+        }
+        .fab-dot.on { background: var(--ok); }
+        .fab-dot.off { background: var(--danger); }
+        .fab-dot.busy { background: var(--warn); }
+        .fab-menu {
+            position: fixed; right: 20px; bottom: 88px;
+            background: var(--bg-raised); border: 1px solid var(--btn); border-radius: 14px;
+            padding: 6px; z-index: 960; box-shadow: 0 8px 24px var(--overlay);
+            display: flex; flex-direction: column; gap: 2px;
+        }
+        .fab-menu-item {
+            background: none; border: none; color: var(--fg-1); padding: 10px 18px;
+            border-radius: 10px; font-size: 14px; cursor: pointer;
+            text-align: left; white-space: nowrap;
+        }
+        .fab-menu-item:hover { background: var(--btn); }
+
+        .modal-overlay {
+            position: fixed; inset: 0; background: var(--overlay-modal);
+            z-index: 3000; display: flex; align-items: center; justify-content: center; padding: 16px;
+        }
+        .modal {
+            background: var(--bg-panel); border: 1px solid var(--btn); border-radius: 16px;
+            width: 100%; max-width: 640px; max-height: 90vh;
+            display: flex; flex-direction: column; box-shadow: 0 12px 40px var(--overlay-modal);
+        }
+        .modal-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 14px 20px; border-bottom: 1px solid var(--border);
+            font-size: 16px; font-weight: 700;
+        }
+        .modal-close { background: none; border: none; color: var(--fg-3); font-size: 24px; cursor: pointer; line-height: 1; }
+        .modal-close:hover { color: var(--fg); }
+        .modal-body { padding: 16px 20px; overflow-y: auto; }
+        .modal-section-title { font-size: 13px; color: var(--brand-soft); font-weight: 700; margin: 14px 0 8px; }
+        .modal-section-title:first-child { margin-top: 0; }
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+        .form-item { display: flex; flex-direction: column; gap: 4px; }
+        .form-item.full { grid-column: 1 / -1; }
+        .form-item label { font-size: 12px; color: var(--fg-4); }
+        .form-item input, .form-item select {
+            background: var(--bg-field); border: 1px solid var(--border-field); color: var(--fg-1);
+            border-radius: 8px; padding: 8px 10px; font-size: 13px; outline: none;
+        }
+        .namelist-panel { display: flex; flex-direction: column; gap: 8px; }
+        .namelist-editor {
+            width: 100%; box-sizing: border-box; min-height: 240px; resize: vertical;
+            padding: 10px 12px; border: 1px solid var(--border-field); border-radius: 8px;
+            background: var(--bg-inset); color: var(--fg-1); font-size: 13px; line-height: 1.6;
+            font-family: Consolas, "Courier New", monospace; outline: none;
+        }
+        .namelist-editor:focus { border-color: var(--brand-1); }
+        .namelist-bar { display: flex; align-items: center; gap: 10px; }
+        .namelist-hint { flex: 1; font-size: 12px; color: var(--fg-5); }
+        .channel-panel { display: flex; flex-direction: column; gap: 8px; }
+        .channel-bar { display: flex; align-items: center; gap: 10px; }
+        .channel-list {
+            max-height: 220px; overflow-y: auto; border: 1px solid var(--border-field);
+            border-radius: 8px; padding: 6px 10px; background: var(--bg-inset);
+            display: flex; flex-direction: column; gap: 2px;
+        }
+        .channel-item {
+            display: flex; align-items: center; gap: 8px; padding: 5px 4px;
+            border-radius: 6px; cursor: pointer; font-size: 13px; color: var(--fg-2);
+        }
+        .channel-item:hover { background: var(--bg-field); }
+        .channel-item input { width: 15px; height: 15px; accent-color: var(--brand-1); cursor: pointer; }
+        .channel-item .ch-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .channel-item .ch-id { font-size: 11px; color: var(--fg-6); font-family: Consolas, monospace; }
+        .form-item input:focus, .form-item select:focus { border-color: var(--brand-1); }
+        .form-item input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--brand-1); cursor: pointer; }
+        .checkbox-item { flex-direction: row; align-items: center; gap: 8px; }
+        .checkbox-item label { color: var(--fg-2); font-size: 13px; cursor: pointer; }
+        .modal-footer {
+            display: flex; align-items: center; justify-content: flex-end; gap: 12px;
+            padding: 12px 20px; border-top: 1px solid var(--border);
+        }
+        .modal-msg { flex: 1; font-size: 12px; color: var(--ok); }
+        .modal-msg.err { color: var(--danger); }
+
+        .station-toast {
+            position: fixed; bottom: 96px; left: 50%; transform: translateX(-50%);
+            background: var(--scrim-toast); color: var(--fg); padding: 10px 20px;
+            border-radius: 12px; font-size: 14px; z-index: 3100;
+            opacity: 0; pointer-events: none; transition: opacity 0.25s ease;
+        }
+        .station-toast.show { opacity: 1; }
+
+        .login-panel { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+        .login-status-text { font-size: 14px; color: var(--fg-2); }
+        .login-status-text.ok { color: var(--ok); }
+        .qr-container {
+            display: flex; flex-direction: column; align-items: center; gap: 10px;
+            padding: 14px; background: var(--bg-field); border: 1px solid var(--border-field);
+            border-radius: 12px; margin-bottom: 6px;
+        }
+        .qr-container img {
+            width: 200px; height: 200px; border-radius: 8px;
+            background: var(--fg); padding: 8px; image-rendering: pixelated;
+        }
+        .qr-hint { font-size: 12px; color: var(--fg-4); text-align: center; line-height: 1.6; }
+
+        @media (max-width: 600px) {
+            .form-grid { grid-template-columns: 1fr; }
+            .topbar-title { font-size: 14px; }
+            .topbar-status { font-size: 12px; }
+        }
+    </style>
+</head>
+<body>
+    <!-- ===== TG Station 悬浮球 ===== -->
+    <div class="station-fab" id="stationFab" title="TG Station 快捷菜单">
+        <span class="fab-dot off" id="fabDot"></span>
+        <span class="fab-icon" id="fabIcon">▶</span>
+    </div>
+    <div class="fab-menu" id="fabMenu" style="display:none;">
+        <button class="fab-menu-item" id="fabToggleBtn">▶ 开始监听</button>
+        <button class="fab-menu-item" id="fabRefreshBtn">🔄 刷新媒体</button>
+        <button class="fab-menu-item" id="fabSettingsBtn">⚙️ 设置</button>
+    </div>
+    <!-- 删除按钮：body 层级 fixed 右下角（放 header 外，避免 header 的 backdrop-filter 破坏 fixed 定位） -->
+    <button class="action-btn delete" id="deleteBtn" style="display:none;">删除</button>
+
+    <!-- ===== TG Station 设置弹窗 ===== -->
+    <div class="modal-overlay" id="settingsModal" style="display:none;">
+        <div class="modal">
+            <div class="modal-header">
+                <span>⚙️ 设置</span>
+                <button class="modal-close" id="settingsCloseBtn">×</button>
+            </div>
+            <div class="modal-body" id="settingsBody"></div>
+            <div class="modal-footer">
+                <span id="settingsMsg" class="modal-msg"></span>
+                <button class="topbar-btn primary" id="saveSettingsBtn">💾 保存设置</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="station-toast" id="stationToast"></div>
+
+    <!-- 错误弹窗：替代原生 alert（原生弹窗会冻结整个页面，且样式与界面不搭） -->
+    <div class="err-toast" id="errToast" role="alert" aria-live="assertive">
+        <div class="err-icon">⚠️</div>
+        <div class="err-text">
+            <div class="err-title" id="errTitle">操作失败</div>
+            <div class="err-msg" id="errMsg"></div>
+        </div>
+        <button class="err-close" id="errClose" aria-label="关闭">×</button>
+    </div>
+
+    <!-- 确认弹窗：替代原生 confirm（原生弹窗冻结页面，且移动端体验差） -->
+    <div class="confirm-overlay" id="confirmModal">
+        <div class="confirm-box">
+            <div class="confirm-title" id="confirmTitle">确认操作</div>
+            <div class="confirm-msg" id="confirmMsg"></div>
+            <div class="confirm-actions">
+                <button class="confirm-btn ghost" id="confirmCancel">取消</button>
+                <button class="confirm-btn danger" id="confirmOk">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="install-banner" id="installBanner">
+        <div class="install-banner-content">
+            <div class="install-icon">📸</div>
+            <div class="install-text">
+                <h3>安装到主屏幕</h3>
+                <p>像APP一样使用媒体浏览器</p>
+            </div>
+        </div>
+        <button class="install-btn" id="installBtn">安装</button>
+        <button class="install-close" id="installClose">×</button>
+    </div>
+    
+    <div class="container" id="mainContainer" style="display:none;">
+        <div class="header">
+            <div class="filter-btns">
+                <button class="filter-btn active" data-filter="all">全部</button>
+                <button class="filter-btn" data-filter="photo">照片</button>
+                <button class="filter-btn" data-filter="video">视频</button>
+                <button class="filter-btn movie-entry" data-filter="movie">🎬 影视</button>
+            </div>
+            <div class="action-btns">
+                <span class="sel-badge" id="selBadge" style="display:none;">点选或滑动选择</span>
+                <button class="sel-clear" id="selClearBtn" style="display:none;">✕ 清空</button>
+                <button class="action-btn" id="selectModeBtn">选择</button>
+                <button class="action-btn" id="selectAllBtn" style="display:none;">全选</button>
+            </div>
+        </div>
+        <!-- ===== TG Station 控制栏（照片标题下方） ===== -->
+        <div class="station-topbar" id="stationTopbar">
+            <div class="topbar-title">🎛️ TG Station<span class="build-stamp" id="buildStamp" title="页面版本；若与部署版本不一致说明是浏览器缓存">…</span></div>
+            <div class="topbar-status">
+                <span class="status-dot off" id="stationDot"></span>
+                <span id="stationStatusText">后端离线</span>
+            </div>
+            <div class="topbar-actions">
+                <button class="topbar-btn" id="listenToggleBtn">▶ 开始监听</button>
+                <button class="topbar-btn" id="settingsBtn">⚙️ 设置</button>
+            </div>
+        </div>
+        <div class="download-panel" id="downloadPanel">
+            <div class="dl-header" id="dlHeader">
+                <span>⬇️ 下载进度</span>
+                <span class="dl-summary" id="dlSummary"></span>
+                <button class="dl-stop-btn" id="dlStopBtn" title="停止下载（终止当前下载任务，已下载文件保留）">⏹ 停止</button>
+                <span class="dl-arrow" id="dlArrow">▸</span>
+            </div>
+            <!-- 总进度 / 速度 / 剩余时间 -->
+            <div class="dl-meta" id="dlMeta" style="display:none">
+                <div class="dl-overall-bar"><div class="dl-overall-fill" id="dlOverallFill" style="width:0%"></div></div>
+                <div class="dl-meta-row"><span>总进度 <b id="dlCount">0 / 0</b></span><span><b id="dlSpeed">—</b> · 剩余 <b id="dlEta">—</b></span></div>
+            </div>
+            <div class="dl-done" id="dlDone" style="display:none">✅ 全部完成</div>
+            <div class="dl-body" id="dlBody" style="display:none">
+                <div id="dlTasks"></div>
+                <div class="dl-recent-title" id="dlRecentTitle" style="display:none">🕘 最近下载</div>
+                <div class="dl-recent" id="dlRecent"></div>
+            </div>
+        </div>
+        <div id="content"></div>
+    </div>
+    <div class="lightbox" id="lightbox">
+        <!-- 桌面端边缘热区：鼠标滑到两侧才显示翻页键 -->
+        <div class="nav-hotzone prev" id="navZonePrev"></div>
+        <div class="nav-hotzone next" id="navZoneNext"></div>
+        <div class="lightbox-close" id="lightboxCloseBtn">×</div>
+        <div class="lightbox-nav prev" id="navPrev">‹</div>
+        <div class="lightbox-content" id="lightboxContent"></div>
+        <div class="lightbox-nav next" id="navNext">›</div>
+        <div class="lightbox-counter" id="lightboxCounter"></div>
+        <div class="lightbox-delete" id="lightboxDeleteBtn" title="删除此图片">🗑️</div>
+    </div>
+    <div class="delete-toast" id="deleteToast">✅ 删除成功！</div>
+    <script>
+        let videoGen = 0;  // 视频代际计数器，防止僵尸音频
+        let deferredPrompt;
+        let allMedia = [], filteredMedia = [], currentIndex = 0, currentFilter = 'all';
+        let mediaGen = 0;  // 媒体列表代际：reloadMedia() 复位后，在途的旧分页响应据此丢弃，避免重复项
+        let stationData = null;  // 全局：filterMedia() 的 movie 过滤需要读取 movie_min_minutes（IIFE 内赋值）
+        let touchStartX = 0, touchStartY = 0, touchStartTime = 0, ignoreSwipe = false;
+        const EDGE_THRESHOLD = 70;
+        const SWIPE_THRESHOLD = 80;
+        const TIME_THRESHOLD = 350;
+        let selectMode = false, selectedFiles = new Set();
+        let currentScale = 1, initialPinchScale = 1;
+        
+        function safePath(p) {
+            return p.split('/').map(encodeURIComponent).join('/');
+        }
+        
+        function showDeleteToast() {
+            const toast = document.getElementById('deleteToast');
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 1000);
+        }
+        
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            showInstallBanner();
+        });
+        
+        function showInstallBanner() {
+            const banner = document.getElementById('installBanner');
+            const dismissed = localStorage.getItem('installDismissed');
+            if (!dismissed) {
+                banner.classList.add('show');
+            }
+        }
+        
+        document.getElementById('installBtn').addEventListener('click', async () => {
+            const banner = document.getElementById('installBanner');
+            banner.classList.remove('show');
+            
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                const { outcome } = await deferredPrompt.userChoice;
+                if (outcome === 'accepted') {
+                    console.log('用户接受了安装');
+                }
+                deferredPrompt = null;
+            }
+        });
+        
+        document.getElementById('installClose').addEventListener('click', () => {
+            document.getElementById('installBanner').classList.remove('show');
+            localStorage.setItem('installDismissed', 'true');
+        });
+        
+        let loadingMore = false, allDatesLoaded = false, dateIndex = 0, allDates = [];
+        // 当前日期已加载的页数（page 游标）。预注入/首屏只给了第 1 页，
+        // 分页不能从"下一个日期"开始，否则第一个日期的第 2..N 页永远不被请求。
+        // 历史 bug：后端注入的 firstFiles 上限 100 条，而首个日期可能有上千个文件
+        // （2026-10-09 有 2676 个 = 27 页），于是静默丢掉 2576 个文件。
+        let datePage = 1;
+
+        async function load() {
+            try {
+                // 如果有预注入数据，直接秒开
+                if (window.__INIT__) {
+                    allDates = window.__INIT__.dates;
+                    if (window.__INIT__.firstFiles) {
+                        window.__INIT__.firstFiles.forEach(f => allMedia.push(f));
+                    }
+                    // 预注入的是第一个日期的第 1 页；游标停在第一个日期上，
+                    // 由 loadRemainingDates 从第 2 页继续抓完它
+                    datePage = 1;
+                    dateIndex = 0;
+                    filterMedia();
+                    render();
+                    document.getElementById('mainContainer').style.display = 'block';
+                    loadRemainingDates(mediaGen);
+                    return;
+                }
+                
+                // 降级：API 加载
+                const res = await fetch('/api/dates');
+                const data = await res.json();
+                allDates = data.dates;
+                
+                // 先加载第一个日期，立即显示
+                if (allDates.length > 0) {
+                    const d = await fetch('/api/files/' + allDates[0] + '?page=1');
+                    const fd = await d.json();
+                    fd.files.forEach(f => allMedia.push({...f, date: allDates[0]}));
+                    datePage = 1;
+                    dateIndex = 0;
+                }
+                
+                filterMedia();
+                render();
+                document.getElementById('mainContainer').style.display = 'block';
+                
+                // 后台加载剩余
+                loadRemainingDates(mediaGen);
+            } catch (e) {
+                console.error('Load error:', e);
+                document.getElementById('mainContainer').style.display = 'block';
+            }
+        }
+        
+        // gen 用于竞态保护：reloadMedia() 复位列表后，在途的旧分页循环会看到
+        // mediaGen 变化并立即退出，不再把旧页数据 push 进新列表（否则产生重复项）
+        // 每个日期从 datePage+1 页开始抓（首屏已抓了第 1 页），抓完整天再前进
+        async function loadRemainingDates(gen) {
+            if (gen === undefined) gen = mediaGen;
+            if (loadingMore || dateIndex >= allDates.length) { allDatesLoaded = true; return; }
+            loadingMore = true;
+            try {
+                let count = 0;
+                while (dateIndex < allDates.length) {
+                    if (gen !== mediaGen) return;  // 列表已被复位，丢弃本轮
+                    const date = allDates[dateIndex];
+                    let p = datePage + 1, hasMore = true;
+                    while (hasMore) {
+                        const r = await fetch('/api/files/' + date + '?page=' + p);
+                        const d = await r.json();
+                        if (gen !== mediaGen) return;
+                        d.files.forEach(f => allMedia.push({...f, date}));
+                        hasMore = p < d.pages;
+                        p++;
+                    }
+                    datePage = 0;        // 后续日期从第 1 页开始
+                    dateIndex++;
+                    count++;
+                    // 每加载3个日期更新一次显示
+                    if (count % 3 === 0) { filterMedia(); render(); }
+                }
+                if (gen !== mediaGen) return;
+                allDatesLoaded = true;
+                filterMedia(); render();
+            } catch (e) { console.error(e); }
+            finally {
+                // 只有当没有更新的 generation 接管时，才释放 loadingMore
+                if (gen === mediaGen) loadingMore = false;
+            }
+        }
+        
+        // 复位媒体列表并重新加载：代际 +1 使在途分页作废，重置全部派生状态，
+        // 并把筛选按钮的 active 类同步回"全部"（refreshMediaNow 之前只改
+        // currentFilter 不改按钮，会出现"按钮显示视频、列表却是全部"）
+        async function reloadMedia() {
+            mediaGen++;
+            loadingMore = false;
+            allDatesLoaded = false;
+            dateIndex = 0;
+            datePage = 0;      // 复位页游标；load() 走 API 分支会重新抓第 1 页
+            allDates = [];
+            allMedia = [];
+            filteredMedia = [];
+            currentIndex = 0;
+            currentFilter = 'all';
+            selectMode = false;
+            selectedFiles.clear();
+            window.__INIT__ = null;
+            setActiveFilterButton('all');
+            updateActionButtons();
+            await load();
+            await loadRemainingDates(mediaGen);
+        }
+        
+        function movieMinMinutes() {
+            return (stationData && stationData.movie_min_minutes) || 5;
+        }
+
+        function filterMedia() {
+            // 注意：'all' 必须产生新数组。此前 filteredMedia = allMedia 是别名，
+            // 任何就地修改 filteredMedia 都会污染 allMedia（续播/删除路径踩过）
+            if (currentFilter === 'all') filteredMedia = allMedia.slice();
+            else if (currentFilter === 'photo') filteredMedia = allMedia.filter(m => !m.isVideo);
+            else if (currentFilter === 'movie') {
+                const minutes = movieMinMinutes();
+                filteredMedia = allMedia.filter(m => m.isVideo && m.duration >= minutes * 60);
+            }
+            else filteredMedia = allMedia.filter(m => m.isVideo);
+        }
+        
+        function render() {
+            if (filteredMedia.length === 0) {
+                document.getElementById('content').innerHTML = '<div class="empty-tip">' + (currentFilter === 'movie'
+                    ? '🎬 暂无时长超过 ' + movieMinMinutes() + ' 分钟的视频'
+                    : '暂无内容') + '</div>';
+                return;
+            }
+            let html = '', currentDate = '';
+            filteredMedia.forEach((item, i) => {
+                if (item.date !== currentDate) {
+                    if (currentDate) html += '</div></div>';
+                    currentDate = item.date;
+                    let dateHtml = '<div class="date-section"><div class="date-header">' + currentDate;
+                    if (selectMode) {
+                        dateHtml += '<span class="select-hint">点击选择 | 已选 ' + selectedFiles.size + ' 个</span>';
+                    }
+                    dateHtml += '</div><div class="photo-grid">';
+                    html += dateHtml;
+                }
+                const thumbUrl = safePath(item.path);
+                const encodedPath = encodeURIComponent(item.path);
+                const isSelected = selectedFiles.has(item.path);
+                const selectedClass = isSelected ? ' selected' : '';
+                if (item.isVideo) {
+                    html += '<div class="photo-item' + selectedClass + '" data-index="' + i + '" data-path="' + encodeURIComponent(item.path) + '">';
+                    html += '<img src="/thumb/' + thumbUrl + '" loading="lazy" onerror="this.src=\'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22200%22><rect fill=%22%23333%22 width=%22200%22 height=%22200%22/><text x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23888%22 font-size=%2230%22>▶</text></svg>\'">';
+                    html += '<div class="video-overlay"><div class="play-indicator"></div></div>';
+                    html += '</div>';
+                } else {
+                    html += '<div class="photo-item' + selectedClass + '" data-index="' + i + '" data-path="' + encodeURIComponent(item.path) + '"><img src="/thumb/' + thumbUrl + '" loading="lazy" onerror="this.src=\'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22200%22><rect fill=%22%23333%22 width=%22200%22 height=%22200%22/><text x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23888%22 font-size=%2224%22>🖼</text></svg>\'"></div>';
+                }
+            });
+            if (currentDate) html += '</div></div>';
+            document.getElementById('content').innerHTML = html;
+        }
+
+        // ---------- 媒体网格交互：事件委托（绑定一次，不随 render 增长） ----------
+        // 此前每个 .photo-item 在每次 render() 时挂 4 个监听器（touchstart/move/end/click），
+        // 16945 个文件 = 6.7 万个闭包 + O(n) 挂载开销，每次翻页/重渲染都要重建。
+        // 现在 4 个监听器挂在 #content 上，靠 closest('.photo-item') 定位目标元素。
+        const GRID_TAP_MOVE = 8;      // 位移小于此值算点击而非滑动
+        const GRID_TAP_MS = 250;      // 按住时间上限
+        let gridTouch = null;
+        let gridLastTapTime = 0;
+
+        // 点击处理：选择模式下切换勾选，否则打开灯箱
+        function handleGridTap(el) {
+            if (!el.dataset.path) return;
+            if (selectMode) {
+                const path = decodeURIComponent(el.dataset.path);
+                if (selectedFiles.has(path)) {
+                    selectedFiles.delete(path);
+                    el.classList.remove('selected');
+                } else {
+                    selectedFiles.add(path);
+                    el.classList.add('selected');
+                }
+                updateActionButtons();
+            } else {
+                currentIndex = parseInt(el.dataset.index);
+                openLightbox();
+            }
+        }
+
+        const contentEl = document.getElementById('content');
+
+        contentEl.addEventListener('touchstart', (e) => {
+            const el = e.target.closest('.photo-item');
+            if (!el || e.touches.length !== 1) { gridTouch = null; return; }
+            const touch = e.touches[0];
+            gridTouch = {
+                el,
+                x: touch.clientX,
+                y: touch.clientY,
+                time: Date.now(),
+                moved: false,
+                swipeActive: false,
+                addMode: true,
+                swiped: new Set()
+            };
+        }, { passive: true });
+
+        contentEl.addEventListener('touchmove', (e) => {
+            const g = gridTouch;
+            if (!g || e.touches.length !== 1) return;
+            const touch = e.touches[0];
+            const deltaX = Math.abs(touch.clientX - g.x);
+            const deltaY = Math.abs(touch.clientY - g.y);
+            if (deltaX <= GRID_TAP_MOVE && deltaY <= GRID_TAP_MOVE) return;
+            g.moved = true;
+            if (!selectMode) return;
+            // 选择模式：滑动批量勾选/取消（首格决定是 "选中" 还是 "取消"）
+            e.preventDefault();
+            if (!g.swipeActive) {
+                g.swipeActive = true;
+                g.addMode = !selectedFiles.has(decodeURIComponent(g.el.dataset.path));
+            }
+            const target = document.elementFromPoint(touch.clientX, touch.clientY);
+            const item = target ? target.closest('.photo-item') : null;
+            if (item && item.dataset.path) {
+                const p = decodeURIComponent(item.dataset.path);
+                if (!g.swiped.has(p)) {
+                    g.swiped.add(p);
+                    if (g.addMode) {
+                        selectedFiles.add(p);
+                        item.classList.add('selected');
+                    } else {
+                        selectedFiles.delete(p);
+                        item.classList.remove('selected');
+                    }
+                    updateActionButtons();
+                }
+            }
+        }, { passive: false });
+
+        contentEl.addEventListener('touchend', (e) => {
+            const g = gridTouch;
+            gridTouch = null;
+            if (!g) return;
+            if (g.swipeActive || g.moved) return;
+            const touch = e.changedTouches[0];
+            const deltaX = Math.abs(touch.clientX - g.x);
+            const deltaY = Math.abs(touch.clientY - g.y);
+            if (deltaX < GRID_TAP_MOVE && deltaY < GRID_TAP_MOVE && Date.now() - g.time < GRID_TAP_MS) {
+                e.preventDefault();
+                gridLastTapTime = Date.now();
+                handleGridTap(g.el);
+            }
+        }, { passive: false });
+
+        contentEl.addEventListener('click', (e) => {
+            const el = e.target.closest('.photo-item');
+            if (!el) return;
+            // 移动端 touchend 已处理过点击，忽略随之而来的合成 click
+            if (gridLastTapTime && Date.now() - gridLastTapTime < 300) { gridLastTapTime = 0; return; }
+            handleGridTap(el);
+        });
+        
+        function toggleSelectMode() {
+            selectMode = !selectMode;
+            if (!selectMode) {
+                selectedFiles.clear();
+            }
+            updateActionButtons();
+            render();
+        }
+        
+        function updateActionButtons() {
+            const selectModeBtn = document.getElementById('selectModeBtn');
+            const selectAllBtn = document.getElementById('selectAllBtn');
+            const deleteBtn = document.getElementById('deleteBtn');
+            const stationFab = document.getElementById('stationFab');
+            const fabMenu = document.getElementById('fabMenu');
+            
+            if (selectMode) {
+                selectModeBtn.classList.add('active');
+                selectModeBtn.textContent = '✕ 退出';
+                selectAllBtn.style.display = 'block';
+                selectAllBtn.textContent = (selectedFiles.size === filteredMedia.length && filteredMedia.length > 0)
+                    ? '取消全选' : '全选';
+                // 多选模式下隐藏右下角悬浮球，避免与删除按钮重叠
+                stationFab.style.display = 'none';
+                fabMenu.style.display = 'none';
+                // 已选数量角标 + 一键清空
+                const badge = document.getElementById('selBadge');
+                const clearBtn = document.getElementById('selClearBtn');
+                if (selectedFiles.size > 0) {
+                    badge.style.display = '';
+                    badge.textContent = '已选 ' + selectedFiles.size + ' 项';
+                    clearBtn.style.display = selectedFiles.size > 0 ? '' : 'none';
+                } else {
+                    badge.style.display = '';
+                    badge.textContent = '点选或滑动选择';
+                    clearBtn.style.display = 'none';
+                }
+
+                if (selectedFiles.size > 0) {
+                    deleteBtn.style.display = 'block';
+                    deleteBtn.textContent = '🗑️ 删除 (' + selectedFiles.size + ')';
+                    deleteBtn.style.opacity = '1';
+                } else {
+                    deleteBtn.style.display = 'block';
+                    deleteBtn.textContent = '🗑️ 删除';
+                    deleteBtn.style.opacity = '0.5';
+                }
+            } else {
+                selectModeBtn.classList.remove('active');
+                selectModeBtn.textContent = '选择';
+                selectAllBtn.style.display = 'none';
+                deleteBtn.style.display = 'none';
+                deleteBtn.style.opacity = '1';
+                const badge = document.getElementById('selBadge');
+                const clearBtn = document.getElementById('selClearBtn');
+                if (badge) badge.style.display = 'none';
+                if (clearBtn) clearBtn.style.display = 'none';
+                // 退出多选，恢复悬浮球
+                stationFab.style.display = '';
+                fabMenu.style.display = 'none';
+            }
+        }
+
+        // 清空已选（角标上的一键入口）
+        function clearSelection() {
+            selectedFiles.clear();
+            document.querySelectorAll('.photo-item.selected').forEach(el => el.classList.remove('selected'));
+            updateActionButtons();
+        }
+        
+        function selectAll() {
+            if (selectedFiles.size === filteredMedia.length) {
+                selectedFiles.clear();
+            } else {
+                selectedFiles.clear();
+                filteredMedia.forEach(item => selectedFiles.add(item.path));
+            }
+            render();
+            updateActionButtons();
+        }
+        
+        async function deleteSelected() {
+            if (selectedFiles.size === 0) return;
+            
+            try {
+                const filesToDelete = Array.from(selectedFiles);
+                console.log('准备删除的文件：', filesToDelete);
+                
+                const response = await fetch('/api/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ files: filesToDelete })
+                });
+                
+                const data = await response.json();
+                console.log('删除结果：', data);
+                
+                if (data.deleted > 0) {
+                    showDeleteToast();
+                    // 直接从数组里移除已删除的文件，不重新加载页面
+                    const deletedSet = new Set(filesToDelete);
+                    // 灯箱里"正在看的那张"要记住：数组缩短后 currentIndex 会漂移，
+                    // 若它指向的项被删掉，下一次 navigate/openLightbox 会开到别的图上
+                    const curPath = (filteredMedia[currentIndex] || {}).path;
+                    const curKept = curPath && !deletedSet.has(curPath);
+                    allMedia = allMedia.filter(m => !deletedSet.has(m.path));
+                    filterMedia();
+                    if (curKept) {
+                        const ni = filteredMedia.findIndex(m => m.path === curPath);
+                        currentIndex = ni >= 0 ? ni : 0;
+                    } else {
+                        currentIndex = Math.min(currentIndex, Math.max(0, filteredMedia.length - 1));
+                    }
+                    selectedFiles.clear();
+                    selectMode = false;
+                    updateActionButtons();
+                    // 同样只做增量同步，避免批量删除后全量重建 1.6 万个格子
+                    const scrollY = window.scrollY;
+                    syncGridAfterDelete(deletedSet, null);
+                    window.scrollTo(0, scrollY);
+                }
+            } catch (e) {
+                console.error('Delete error:', e);
+                if (window.showError) window.showError(e.message, '删除失败');
+                else alert('删除失败！请重试。错误信息：' + e.message);
+            }
+        }
+        
+        // ---------- 预取下一张 ----------
+        // 灯箱里等原图下载是唯一剩下的等待来源。在你看当前这张时后台把相邻的几张
+        // 悄悄下好（复用浏览器 HTTP 缓存），按 → / 删除后下一张基本瞬时可见。
+        // 上限 6 张：预取的都是全分辨率图，不做上限会在长时间浏览后占掉大量内存。
+        const PREFETCH_NEXT = 2;   // 向后预取几张
+        const PREFETCH_PREV = 1;   // 向前预取几张
+        const PREFETCH_KEEP = 6;   // 内存里最多保留几张已解码的预取图
+        const prefetched = new Map();   // path -> Image（Map 保持插入顺序，便于淘汰最旧的）
+        let prefetchTimer = null;
+
+        function fileUrl(path) {
+            return '/api/file/' + safePath(path);
+        }
+
+        function schedulePrefetch() {
+            if (prefetchTimer) { clearTimeout(prefetchTimer); prefetchTimer = null; }
+            // 先让当前这张加载完再说，别跟着抢带宽
+            prefetchTimer = setTimeout(prefetchNeighbors, 300);
+        }
+
+        function prefetchNeighbors() {
+            prefetchTimer = null;
+            if (window.__noPrefetch) return;   // 自动化测试用开关，正常运行不会设置
+            if (!document.getElementById('lightbox').classList.contains('active')) return;
+            const targets = [];
+            for (let d = 1; d <= PREFETCH_NEXT; d++) {
+                const it = filteredMedia[currentIndex + d];
+                if (it && !it.isVideo) targets.push(it.path);
+            }
+            for (let d = 1; d <= PREFETCH_PREV; d++) {
+                const it = filteredMedia[currentIndex - d];
+                if (it && !it.isVideo) targets.push(it.path);
+            }
+            targets.forEach(p => {
+                if (prefetched.has(p)) return;
+                const im = new Image();
+                im.decoding = 'async';
+                im.src = fileUrl(p);
+                prefetched.set(p, im);
+            });
+            while (prefetched.size > PREFETCH_KEEP) {
+                const oldest = prefetched.keys().next().value;
+                prefetched.get(oldest).src = '';   // 释放正在下载的
+                prefetched.delete(oldest);
+            }
+        }
+
+        function openLightbox() {
+            videoGen++;  // 新一代视频
+            const myGen = videoGen;
+            const item = filteredMedia[currentIndex];
+            const thumbUrl = safePath(item.path);
+            
+            // 彻底杀死旧视频：与 closeLightbox 共用 destroyVideo，避免两条路径逻辑分叉
+            const oldVideo = document.querySelector('.lightbox-content video');
+            if (oldVideo) destroyVideo(oldVideo);
+            clearVideoControls();
+            document.getElementById('lightboxContent').innerHTML = '';
+            document.getElementById('lightboxCounter').textContent = (currentIndex + 1) + ' / ' + filteredMedia.length;
+            document.getElementById('lightbox').classList.add('active');
+            document.body.style.overflow = 'hidden';
+            currentScale = 1;
+            
+            if (item.isVideo) {
+                const video = document.createElement('video');
+                video.autoplay = true;
+                video.muted = true;
+                video.playsInline = true;
+                // 影视动辄几个 GB：preload=auto 会让 Chrome 一打开就狂下（手机内存/流量
+                // 都吃不消），改成 metadata，真正播放时再按需缓冲。
+                video.preload = 'metadata';
+                video.loop = (currentFilter !== 'movie');  // 影视不循环播放
+                video._mbPath = item.path;  // 供进度保存使用
+                video.style.background = '#000';
+                const source = document.createElement('source');
+                source.src = '/api/file/' + thumbUrl;
+                source.type = 'video/mp4';
+                video.appendChild(source);
+                video.onloadeddata = () => {
+                    if (videoGen !== myGen) { video.muted = true; video.pause(); return; }
+                    video.muted = false;
+                    // 影视续播：从上次进度继续
+                    if (currentFilter === 'movie') {
+                        try {
+                            const saved = parseFloat(localStorage.getItem('mb_pos_' + item.path));
+                            if (saved > 10 && video.duration && saved < video.duration * 0.95) {
+                                video.currentTime = saved;
+                            }
+                        } catch (e) { /* localStorage 不可用则忽略 */ }
+                    }
+                    video.play();
+                };
+                video.onerror = () => {
+                    document.getElementById('lightboxContent').innerHTML = '<div class="video-error">无法播放此视频<br><button onclick="navigate(1)">下一个</button></div>';
+                };
+                document.getElementById('lightboxContent').appendChild(video);
+                setupVideoControls(video, item.path);
+            } else {
+                const imgContainer = document.createElement('div');
+                imgContainer.style.cssText = 'width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden;';
+                
+                // 直接加载原图，不用缩略图占位。
+                // 曾试过"先显示缩略图、原图到位再替换"，实测反而更卡：多请求一次、
+                // 浏览器要重新缩放绘制一次，而且眼睛会看到"先糊后清"的跳变。
+                const img = document.createElement('img');
+                img.src = fileUrl(item.path);
+                img.style.cssText = 'max-width: 100%; max-height: 100%; object-fit: contain; transition: transform 0.2s ease;';
+                img.loading = 'eager';
+                img.decoding = 'async';   // 大图解码放别的线程，别阻塞主线程交互
+                img.dataset.path = item.path;   // 调试/自动化校验用：这张图应该展示哪个文件
+
+                // 加载进度：大图要几秒，给个明确反馈而不是干等黑屏
+                const ld = document.createElement('div');
+                ld.className = 'lightbox-loading';
+                ld.innerHTML = '<div class="lb-spinner"></div><div class="lb-pct">加载中…</div>';
+                imgContainer.appendChild(ld);
+                let ldTimer = setTimeout(() => { ld.remove(); }, 20000);   // 兜底：别永远转圈
+                const ldPct = ld.querySelector('.lb-pct');
+                const ldDone = () => { clearTimeout(ldTimer); ld.remove(); };
+                img.addEventListener('progress', (ev) => {
+                    if (ev.lengthComputable && ldPct) {
+                        ldPct.textContent = Math.round(ev.loaded * 100 / ev.total) + '%';
+                    }
+                });
+                img.addEventListener('load', ldDone);
+                img.addEventListener('error', ldDone);
+
+                img.onload = () => { if (img.dataset.path === (filteredMedia[currentIndex] || {}).path) schedulePrefetch(); };
+                img.onerror = () => {
+                    imgContainer.innerHTML = '<div class="video-error" style="color:#fff;">无法加载此图片<br><small>文件可能已损坏或过大</small><br><button onclick="navigate(1)">下一个</button></div>';
+                };
+                
+                imgContainer.appendChild(img);
+                document.getElementById('lightboxContent').appendChild(imgContainer);
+                
+                imgContainer.addEventListener('touchstart', handleTouchStart, { passive: false });
+                imgContainer.addEventListener('touchmove', handleTouchMove, { passive: false });
+                imgContainer.addEventListener('touchend', handleTouchEnd);
+                
+                img.addEventListener('click', (e) => {
+                    if (e.touches && e.touches.length > 1) return;
+                    
+                    if (currentScale === 1) {
+                        currentScale = 2;
+                        img.style.transform = 'scale(' + currentScale + ')';
+                        img.classList.add('zoomed');
+                    } else {
+                        currentScale = 1;
+                        img.style.transform = 'scale(' + currentScale + ')';
+                        img.classList.remove('zoomed');
+                    }
+                });
+            }
+            // 视频分支（以及图片已缓存、onload 不再触发的场景）也走一次预取调度
+            schedulePrefetch();
+        }
+        
+        function handleTouchStart(e) {
+            if (e.touches.length === 2) {
+                e.preventDefault();
+                const touch1 = e.touches[0];
+                const touch2 = e.touches[1];
+                initialPinchScale = currentScale;
+                const currentDistance = Math.hypot(
+                    touch2.clientX - touch1.clientX,
+                    touch2.clientY - touch1.clientY
+                );
+                window._pinchDistance = currentDistance;
+            }
+        }
+        
+        function handleTouchMove(e) {
+            if (e.touches.length === 2) {
+                e.preventDefault();
+                const touch1 = e.touches[0];
+                const touch2 = e.touches[1];
+                const currentDistance = Math.hypot(
+                    touch2.clientX - touch1.clientX,
+                    touch2.clientY - touch1.clientY
+                );
+                
+                if (window._pinchDistance) {
+                    const scale = (currentDistance / window._pinchDistance) * initialPinchScale;
+                    currentScale = Math.max(0.5, Math.min(scale, 5));
+                    
+                    const img = document.querySelector('.lightbox-content img');
+                    if (img) {
+                        img.style.transform = 'scale(' + currentScale + ')';
+                        img.classList.toggle('zoomed', currentScale > 1);
+                    }
+                }
+            }
+        }
+        
+        function handleTouchEnd() {
+            window._pinchDistance = null;
+            if (currentScale < 1) {
+                currentScale = 1;
+                const img = document.querySelector('.lightbox-content img');
+                if (img) {
+                    img.style.transform = 'scale(' + currentScale + ')';
+                    img.classList.remove('zoomed');
+                }
+            }
+        }
+        
+        // ---- 自定义视频控制条 ----
+        let vcVideo = null;
+        function setupVideoControls(video, mediaPath) {
+            vcVideo = video;
+            const ctrl = document.createElement('div');
+            ctrl.className = 'video-controls visible';
+            // 触屏 / 窄屏标记：把控制条从画面底边抬高，避免与底部区域重叠
+            try {
+                if (window.matchMedia('(max-width: 900px), (hover: none) and (pointer: coarse)').matches) {
+                    ctrl.classList.add('vc-touch');
+                }
+            } catch (e) {}
+            ctrl.innerHTML = `
+                <div class="vc-seek" id="vcSeek">
+                    <div class="vc-seek-track">
+                        <div class="vc-buf" id="vcBuf"></div>
+                        <div class="vc-fill" id="vcFill"></div>
+                    </div>
+                    <div class="vc-thumb" id="vcThumb"></div>
+                    <div class="vc-tip" id="vcTip"></div>
+                </div>
+                <span class="vc-time" id="vcTime">00:00 / 00:00</span>
+                <input type="range" class="vc-vol" id="vcVol" min="0" max="100" value="100">
+                <button class="vc-full" id="vcFull">⛶</button>`;
+            document.getElementById('lightboxContent').appendChild(ctrl);
+            // 缓冲/加载提示 & 长按倍速徽标（独立于自动隐藏的控制条）
+            const loading = document.createElement('div');
+            loading.className = 'vc-loading';
+            loading.innerHTML = '<div class="lb-spinner"></div>';
+            document.getElementById('lightboxContent').appendChild(loading);
+            const fastBadge = document.createElement('div');
+            fastBadge.className = 'vc-fast';
+            fastBadge.textContent = '⏩ 2x';
+            document.getElementById('lightboxContent').appendChild(fastBadge);
+            
+            const seek = ctrl.querySelector('.vc-seek');
+            const fillEl = ctrl.querySelector('.vc-fill');
+            const bufEl = ctrl.querySelector('.vc-buf');
+            const thumbEl = ctrl.querySelector('.vc-thumb');
+            const tipEl = ctrl.querySelector('.vc-tip');
+            const timeEl = ctrl.querySelector('.vc-time');
+            const volEl = ctrl.querySelector('.vc-vol');
+            const fullBtn = ctrl.querySelector('.vc-full');
+            
+            let hideTimer, lastSave = 0, seeking = false, hovering = false;
+            // 淡出必须同时关掉 pointer-events：只把 opacity 设成 0 的话，那条“看不见”
+            // 的控制条仍然会吞掉视频底部区域的点击（用户感觉“点了没反应”）。
+            // 所以统一用 class 控制显隐，别再用行内 opacity。
+            function show() { ctrl.classList.add('visible'); clearTimeout(hideTimer); hideTimer = setTimeout(() => { if (!video.paused) ctrl.classList.remove('visible'); }, 3000); }
+            function fmt(s) {
+                s = Math.max(0, Math.floor(s || 0));
+                const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+                return h > 0 ? h + ':' + (m < 10 ? '0' : '') + m + ':' + (sec < 10 ? '0' : '') + sec : m + ':' + (sec < 10 ? '0' : '') + sec;
+            }
+            function setLoading(on) { loading.classList.toggle('show', on); }
+            
+            // 影视：定期保存播放进度（localStorage）
+            function saveProgress() {
+                if (currentFilter === 'movie' && mediaPath && video.duration) {
+                    try { localStorage.setItem('mb_pos_' + mediaPath, String(video.currentTime)); } catch (e) {}
+                }
+            }
+
+            // ---- 进度条：缓冲条 + 拖动/悬停时间预览 ----
+            function ratioFromEvent(e) {
+                const rect = seek.getBoundingClientRect();
+                return Math.max(0, Math.min(1, (e.clientX - rect.left) / (rect.width || 1)));
+            }
+            function previewAt(ratio) {
+                const t = ratio * (video.duration || 0);
+                tipEl.style.left = (ratio * 100) + '%';
+                tipEl.textContent = fmt(t);
+                timeEl.textContent = fmt(t) + ' / ' + fmt(video.duration || 0);
+            }
+            function commitSeek(ratio) {
+                const pct = ratio * 100;
+                fillEl.style.width = pct + '%';
+                thumbEl.style.left = pct + '%';
+                previewAt(ratio);
+            }
+            function restoreTime() {
+                timeEl.textContent = fmt(video.currentTime) + ' / ' + fmt(video.duration || 0);
+            }
+            function updateBuffered() {
+                if (!video.duration) return;
+                const b = video.buffered;
+                let end = 0;
+                if (b && b.length) {
+                    for (let i = 0; i < b.length; i++) {
+                        if (video.currentTime >= b.start(i) && video.currentTime <= b.end(i)) { end = b.end(i); break; }
+                    }
+                    if (!end) end = b.end(b.length - 1);
+                }
+                bufEl.style.width = (end / video.duration * 100) + '%';
+            }
+            seek.addEventListener('pointerdown', (e) => {
+                e.stopPropagation();
+                seeking = true; hovering = false;
+                try { seek.setPointerCapture(e.pointerId); } catch (err) {}
+                tipEl.classList.add('show');
+                commitSeek(ratioFromEvent(e));
+                show();
+            });
+            seek.addEventListener('pointermove', (e) => {
+                const r = ratioFromEvent(e);
+                tipEl.classList.add('show');
+                if (seeking) commitSeek(r); else { hovering = true; previewAt(r); }
+            });
+            seek.addEventListener('pointerup', (e) => {
+                if (!seeking) return;
+                seeking = false;
+                if (video.duration) video.currentTime = ratioFromEvent(e) * video.duration;
+                tipEl.classList.remove('show');
+                show();
+            });
+            seek.addEventListener('pointercancel', () => { seeking = false; hovering = false; tipEl.classList.remove('show'); restoreTime(); });
+            seek.addEventListener('pointerleave', () => { hovering = false; if (!seeking) { tipEl.classList.remove('show'); restoreTime(); } });
+
+            video.addEventListener('timeupdate', () => {
+                const now = Date.now();
+                if (now - lastSave > 5000) { lastSave = now; saveProgress(); }
+                if (!seeking && !hovering) {
+                    if (video.duration) {
+                        const r = video.currentTime / video.duration;
+                        fillEl.style.width = (r * 100) + '%';
+                        thumbEl.style.left = (r * 100) + '%';
+                    }
+                    timeEl.textContent = fmt(video.currentTime) + ' / ' + fmt(video.duration || 0);
+                }
+            });
+            video.addEventListener('progress', updateBuffered);
+            video.addEventListener('loadedmetadata', updateBuffered);
+            video.addEventListener('canplay', updateBuffered);
+
+            // 缓冲 / 跳转 loading 提示
+            video.addEventListener('loadstart', () => setLoading(true));
+            video.addEventListener('waiting', () => setLoading(true));
+            video.addEventListener('seeking', () => setLoading(true));
+            video.addEventListener('canplay', () => setLoading(false));
+            video.addEventListener('playing', () => setLoading(false));
+            video.addEventListener('seeked', () => setLoading(false));
+            video.addEventListener('error', () => setLoading(false));
+
+            // 播放/暂停不用按钮：点画面即可（video 的 click 处理）
+            video.addEventListener('play', () => { show(); });
+            video.addEventListener('pause', () => { show(); });
+            video.addEventListener('ended', () => { show(); saveProgress(); });
+            
+            // 快退/快进按钮（« »）已按用户要求删除；键盘 ←/→ 仍可跳转 10 秒。
+            const SEEK_STEP = 10;
+            
+            // 倍速记忆（0.75x~3x）。倍速按钮已按用户要求删除，
+            // 这里只保留上次的倍速值，作为长按临时加速结束后要恢复的原速。
+            const speeds = [0.75, 1, 1.25, 1.5, 2, 2.5, 3];
+            let speedIdx = 1;
+            try {
+                const saved = parseFloat(localStorage.getItem('mb_speed'));
+                const i = speeds.indexOf(saved);
+                if (i >= 0) speedIdx = i;
+            } catch (e) {}
+            video.playbackRate = speeds[speedIdx];
+            
+            // 音量滑块（记忆）
+            try {
+                const savedVol = parseFloat(localStorage.getItem('mb_vol'));
+                if (!isNaN(savedVol) && savedVol >= 0 && savedVol <= 100) {
+                    volEl.value = savedVol;
+                    video.volume = savedVol / 100;
+                    video.muted = savedVol == 0;
+                }
+            } catch (e) {}
+            volEl.onclick = (e) => e.stopPropagation();
+            volEl.addEventListener('input', () => {
+                video.volume = volEl.value / 100;
+                video.muted = volEl.value == 0;
+                try { localStorage.setItem('mb_vol', String(volEl.value)); } catch (e) {}
+            });
+            
+            // 全屏切换（手机可横屏）
+            fullBtn.onclick = (e) => {
+                e.stopPropagation();
+                const container = document.getElementById('lightboxContent');
+                if (document.fullscreenElement || document.webkitFullscreenElement) {
+                    (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+                    fullBtn.textContent = '⛶';
+                } else {
+                    (container.requestFullscreen || container.webkitRequestFullscreen).call(container);
+                    fullBtn.textContent = '🗗';
+                }
+            };
+            document.addEventListener('fullscreenchange', () => {
+                if (!document.fullscreenElement && !document.webkitFullscreenElement) fullBtn.textContent = '⛶';
+            });
+
+            // 长按屏幕临时倍速播放，松手恢复原速。
+            // 提示文案是底部居中大字「2x 快进中 ▶▶」，长按期间显示、松手即消失
+            // （见 .vc-fast 的 CSS）。原来是个挂在屏幕正中的小徽标，会挡画面。
+            let lpTimer = null, lpActive = false, lpSuppressClick = false, lpStartX = 0, lpStartY = 0, baseRate = 1, fastBadgeTimer = null;
+            const LP_MS = 500, LP_SPEED = 2;
+            function endLongPress() {
+                if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; }
+                if (lpActive) {
+                    lpActive = false;
+                    video.playbackRate = baseRate;
+                    fastBadge.classList.remove('show');
+                    lpSuppressClick = true;
+                }
+            }
+            video.addEventListener('pointerdown', (e) => {
+                lpStartX = e.clientX; lpStartY = e.clientY; lpActive = false; lpSuppressClick = false;
+                clearTimeout(lpTimer);
+                lpTimer = setTimeout(() => {
+                    if (!video.paused) {
+                        lpActive = true;
+                        baseRate = video.playbackRate;
+                        video.playbackRate = Math.max(LP_SPEED, baseRate);
+                        // 文案与样式对齐"底部居中大字"（原来是个遮画面的小徽标）
+                        fastBadge.textContent = video.playbackRate + 'x ' +
+                            (video.playbackRate < 1 ? '慢放' : '快进中') + ' ▶▶';
+                        fastBadge.classList.add('show');
+                        // 1 秒后自动隐藏（松手时也会立即隐藏）
+                        clearTimeout(fastBadgeTimer);
+                        fastBadgeTimer = setTimeout(() => fastBadge.classList.remove('show'), 1000);
+                    }
+                }, LP_MS);
+            });
+            video.addEventListener('pointermove', (e) => {
+                if (lpTimer && !lpActive && (Math.abs(e.clientX - lpStartX) > 12 || Math.abs(e.clientY - lpStartY) > 12)) {
+                    clearTimeout(lpTimer); lpTimer = null;
+                }
+            });
+            video.addEventListener('pointerup', endLongPress);
+            video.addEventListener('pointercancel', endLongPress);
+            video.addEventListener('pointerleave', endLongPress);
+
+            video.addEventListener('click', () => {
+                if (lpSuppressClick) { lpSuppressClick = false; return; }
+                video.paused ? video.play() : video.pause();
+            });
+            video.addEventListener('mousemove', show);
+            video.addEventListener('touchstart', show);
+            ctrl.addEventListener('mousemove', show);
+            ctrl.addEventListener('touchstart', (e) => { e.stopPropagation(); show(); });
+            ctrl.addEventListener('click', (e) => e.stopPropagation());
+            
+            show();
+        }
+        function clearVideoControls() {
+            const ctrl = document.querySelector('.video-controls');
+            if (ctrl) ctrl.remove();
+            const loading = document.querySelector('.vc-loading');
+            if (loading) loading.remove();
+            const fast = document.querySelector('.vc-fast');
+            if (fast) fast.remove();
+            vcVideo = null;
+        }
+        
+        // 删除后重新同步网格。数组变了就必须同步 DOM，否则网格里还留着已删除的
+        // 格子、而 filteredMedia 已经左移 —— 之后点任何格子，data-index 都会映射到
+        // 另一张图（表现为"缩略图是 A、点开是 B"），刷新页面才自愈。
+        //
+        // 但不能用 render() 全量重建：实测 16918 个格子要 166~218ms（innerHTML 解析
+        // + 布局），而删除的只有一两张图 —— 这正是"删除后变慢"的原因。这里改成：
+        //   1) 从 DOM 里摘掉已删文件那一格（O(1)，不重建任何东西）
+        //   2) 只把受影响的那几个日期分区重新生成 HTML（通常只有几十~几百格）
+        //   3) 只给后续分区重写 data-index（纯属性写，约 13ms，不触发重排）
+        // 网格其余部分完全不碰：缩略图不闪、不重新请求、不重排。
+        function sectionItemsHTML(items, startIndex) {
+            let html = '';
+            items.forEach((item, k) => {
+                const i = startIndex + k;
+                const selectedClass = selectedFiles.has(item.path) ? ' selected' : '';
+                const thumbUrl = safePath(item.path);
+                html += '<div class="photo-item' + selectedClass + '" data-index="' + i
+                     +  '" data-path="' + encodeURIComponent(item.path) + '">';
+                html += '<img src="/thumb/' + thumbUrl + '" loading="lazy" onerror="this.src=\'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22200%22><rect fill=%22%23333%22 width=%22200%22 height=%22200%22/><text x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23888%22 font-size=%2224%22>🖼</text></svg>\'">';
+                if (item.isVideo) {
+                    html += '<div class="video-overlay"><div class="play-indicator"></div></div>';
+                }
+                html += '</div>';
+            });
+            return html;
+        }
+
+        // deletedPaths: 本次删掉的路径集合；keepPath: 灯箱接下来该显示的项（可为空）
+        // 返回接下来应显示的 filteredMedia 索引（-1 表示已无内容）
+        function syncGridAfterDelete(deletedPaths, keepPath) {
+            const doomed = deletedPaths instanceof Set ? deletedPaths : new Set(deletedPaths);
+
+            // 1) 摘掉已删的格子，并记下每个日期分区里最小/最大的索引
+            const sections = [];
+            document.querySelectorAll('#content .date-section').forEach(sec => {
+                const grid = sec.querySelector('.photo-grid');
+                if (!grid) return;
+                let start = Infinity, end = -Infinity, removed = 0;
+                grid.querySelectorAll('.photo-item').forEach(el => {
+                    const idx = parseInt(el.dataset.index, 10);
+                    if (!(idx >= 0)) return;
+                    if (idx < start) start = idx;
+                    if (idx > end) end = idx;
+                    if (doomed.has(decodeURIComponent(el.dataset.path || ''))) {
+                        el.remove();
+                        removed++;
+                    }
+                });
+                if (start !== Infinity) sections.push({ sec, grid, start, end, removed });
+            });
+
+            if (doomed.size === 0) {
+                if (filteredMedia.length === 0) return -1;
+                let ni = keepPath ? filteredMedia.findIndex(m => m.path === keepPath) : -1;
+                if (ni < 0) ni = Math.min(Math.max(0, currentIndex), filteredMedia.length - 1);
+                return ni;
+            }
+
+            // 2) 分区顺序 = filteredMedia 顺序（每张都是连续的），据此算新的起始索引
+            sections.sort((a, b) => a.start - b.start);
+            const newStart = new Map();
+            let off = 0;
+            sections.forEach(s => {
+                newStart.set(s.sec, s.start - off);
+                off += s.removed;
+            });
+
+            // 3) 只重建被删过的分区，并同步 data-index / 选中态
+            sections.forEach(s => {
+                if (s.removed === 0) return;
+                const ns = newStart.get(s.sec);
+                const items = filteredMedia.slice(ns, ns + s.grid.children.length);
+                s.grid.innerHTML = sectionItemsHTML(items, ns);
+            });
+
+            // 4) 被删分区之后的格子整体左移，重写 data-index（纯属性写，开销很小）
+            sections.forEach(s => {
+                if (s.removed > 0) return;
+                if (s.end < newStart.get(s.sec)) return;
+                const ns = newStart.get(s.sec);
+                const els = s.grid.children;
+                const delta = ns - s.start;
+                if (delta === 0) return;
+                for (let i = 0; i < els.length; i++) {
+                    els[i].dataset.index = String(parseInt(els[i].dataset.index, 10) + delta);
+                }
+            });
+
+            // 5) 日期分区被删空则整段移除
+            sections.forEach(s => {
+                if (s.grid.children.length === 0) s.sec.remove();
+            });
+
+            if (filteredMedia.length === 0) return -1;
+            let ni = keepPath ? filteredMedia.findIndex(m => m.path === keepPath) : -1;
+            if (ni < 0) ni = Math.min(Math.max(0, currentIndex), filteredMedia.length - 1);
+            return ni;
+        }
+
+        // 彻底释放一个视频元素。必须做完整流程：只 pause() 不释放，
+        // 解码器、网络连接和缓冲都会留在原处继续占用资源。
+        // 之前 openLightbox 有完整清理、而 closeLightbox 只调了 pause()，
+        // 导致"点 × 退出后视频仍在后台下载 + 解码器不释放"，页面越来越卡、
+        // 最终必须刷新才能恢复。现在两条路径共用这一个函数。
+        function destroyVideo(v) {
+            if (!v) return;
+            try {
+                if (currentFilter === 'movie' && v.duration && v._mbPath) {
+                    localStorage.setItem('mb_pos_' + v._mbPath, String(v.currentTime));
+                }
+            } catch (e) {}
+            try {
+                v.onloadeddata = null;   // 防止僵尸回调
+                v.onerror = null;
+                v.pause();
+                v.removeAttribute('src');
+                v.srcObject = null;
+                while (v.firstChild) v.removeChild(v.firstChild);
+                v.load();                // 真正终止下载并释放解码器
+            } catch (e) {}
+            try { v.remove(); } catch (e) {}
+        }
+
+        function closeLightbox() { 
+            // 先拿到视频引用再清理 —— 顺序反了会漏掉释放
+            const video = document.querySelector('.lightbox-content video');
+            if (video) destroyVideo(video);
+            clearVideoControls();
+            document.getElementById('lightboxContent').innerHTML = '';
+            // 两个 class 一起摘：既关掉灯箱，也清掉“鼠标靠边”状态（一次属性写入，
+            // 不会触发观察器来回改 class 的死循环 —— 老代码就是这么卡死的）
+            document.getElementById('lightbox').classList.remove('active', 'nav-near');
+            document.body.style.overflow = '';
+            // 滚动到当前查看的图片位置
+            if (filteredMedia.length > 0 && currentIndex >= 0) {
+                const currentItem = filteredMedia[Math.min(currentIndex, filteredMedia.length - 1)];
+                const el = document.querySelector(`[data-path="${encodeURIComponent(currentItem.path)}"]`);
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+        
+        function navigate(delta) { 
+            currentIndex = (currentIndex + delta + filteredMedia.length) % filteredMedia.length; 
+            openLightbox(); 
+        }
+        
+        // 同步筛选按钮高亮。programmatic 切换 currentFilter 时也必须调用，
+        // 否则会出现"按钮显示视频、列表却是全部"的不一致
+        function setActiveFilterButton(filter) {
+            document.querySelectorAll('.filter-btn').forEach(b => {
+                b.classList.toggle('active', b.dataset.filter === filter);
+            });
+        }
+
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                currentFilter = btn.dataset.filter;
+                setActiveFilterButton(currentFilter);
+                filterMedia();
+                currentIndex = 0;
+                if (selectMode) {
+                    selectedFiles.clear();
+                }
+                render();
+            });
+        });
+        
+        document.getElementById('selectModeBtn').addEventListener('click', toggleSelectMode);
+        document.getElementById('selectAllBtn').addEventListener('click', selectAll);
+        document.getElementById('deleteBtn').addEventListener('click', deleteSelected);
+        
+        document.getElementById('lightboxCloseBtn').addEventListener('click', closeLightbox);
+        document.getElementById('navPrev').addEventListener('click', () => navigate(-1));
+        document.getElementById('navNext').addEventListener('click', () => navigate(1));
+
+        // 桌面端：翻页键默认隐藏，鼠标靠近左右边缘 110px 内才显示。
+        // 除了 CSS 的 :hover 热区，这里再用 mousemove 兜底（热区被上层层遮挡时仍生效）。
+        (function initNavAutoHide() {
+            const lb = document.getElementById('lightbox');
+            if (!lb) return;
+            const EDGE = 110;   // 与 CSS 的 .nav-hotzone 宽度保持一致
+            let raf = 0;
+            const isDesktop = () => window.matchMedia('(min-width: 901px)').matches;
+
+            function apply(x) {
+                const near = isDesktop() && (x <= EDGE || x >= window.innerWidth - EDGE);
+                if (near !== lb.classList.contains('nav-near')) lb.classList.toggle('nav-near', near);
+            }
+            lb.addEventListener('mousemove', (e) => {
+                if (raf) return;
+                raf = requestAnimationFrame(() => { raf = 0; apply(e.clientX); });
+            }, { passive: true });
+            // 指针离开灯箱（或窗口）→ 收起
+            lb.addEventListener('mouseleave', () => { lb.classList.remove('nav-near'); });
+            // 关闭灯箱时清掉状态，下次打开是干净的（默认隐藏）。
+            //
+            // 这里原来用 MutationObserver 监听 lb 的 class 变化来清 nav-near —— 这是个
+            // 死循环 bug：回调里又去改 lb 自己的 class，Blink 下会再次触发回调，微任务
+            // 永远跑不完，主线程被焊死（表现为“一关闭灯箱整页就卡住、点哪儿都没反应”，
+            // 图片和视频都会中招）。清状态改成在关闭处显式、一次性完成。
+        })();
+        
+        // 大图查看页删除按钮
+        document.getElementById('lightboxDeleteBtn').addEventListener('click', async () => {
+            const currentItem = filteredMedia[currentIndex];
+            if (!currentItem) return;
+            
+            try {
+                const response = await fetch('/api/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ files: [currentItem.path] })
+                });
+                
+                const data = await response.json();
+                
+                if (data.deleted > 0) {
+                    showDeleteToast();
+                    
+                    // 从列表中移除
+                    const idxToRemove = allMedia.findIndex(m => m.path === currentItem.path);
+                    if (idxToRemove > -1) {
+                        allMedia.splice(idxToRemove, 1);
+                    }
+                    
+                    // 记录下一张（按路径定位，避免索引漂移）
+                    const nextPath = (filteredMedia[currentIndex + 1] || {}).path;
+                    filterMedia();
+                    
+                    // 关闭查看器
+                    closeLightbox();
+                    
+                    // 关键：让网格 DOM 跟上数组（原先漏了这一步）。
+                    // 只重建受影响的日期分区 + 重编号后续分区，不做全量 render，
+                    // 否则每次删除要花 160~220ms 重建 16918 个格子。
+                    const ni = syncGridAfterDelete(new Set([currentItem.path]), nextPath);
+                    if (ni >= 0) {
+                        currentIndex = ni;
+                        openLightbox();
+                    } else {
+                        // 没有图片了，刷新页面
+                        await load();
+                    }
+                } else {
+                    showStationToast('删除失败，请重试', true);
+                }
+            } catch (e) {
+                console.error('Delete error:', e);
+                showStationToast('删除失败：' + e.message, true);
+            }
+        });
+        
+        document.getElementById('lightbox').addEventListener('click', (e) => {
+            if (e.target.id === 'lightbox') {
+                closeLightbox();
+            }
+        });
+        
+        document.getElementById('lightboxContent').addEventListener('click', (e) => {
+            if (!document.querySelector('.lightbox-content video')) closeLightbox();
+        });
+        
+        document.addEventListener('keydown', (e) => { 
+            if (!document.getElementById('lightbox').classList.contains('active')) return; 
+            if (e.key === 'Escape') closeLightbox(); 
+            // 影视看视频：左右键按当前步长快退/快进
+            const videoEl = document.querySelector('.lightbox-content video');
+            if (currentFilter === 'movie' && videoEl && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+                const delta = (e.key === 'ArrowLeft' ? -1 : 1) * SEEK_STEP;
+                if (vcVideo) {
+                    vcVideo.currentTime = Math.max(0, Math.min((vcVideo.duration || 0), vcVideo.currentTime + delta));
+                }
+                return;
+            }
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') navigate(-1); 
+            if (e.key === 'ArrowRight' || e.key === 'ArrowDown') navigate(1); 
+        });
+        
+        window.addEventListener('wheel', (e) => { 
+            if (!document.getElementById('lightbox').classList.contains('active')) return; 
+            e.preventDefault(); 
+            navigate(e.deltaY > 0 ? 1 : -1); 
+        }, { passive: false });
+        
+        // 屏蔽长按/右键系统菜单（手机上长按图片会弹"保存图片/在新标签页中打开"，
+        // 桌面是右键菜单）。长按多选是页面自己用 touchstart/touchend 计时做的，
+        // 不依赖这个菜单，所以屏蔽它不影响长按勾选。
+        document.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        }, true);
+
+        document.addEventListener('touchstart', (e) => {
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+            touchStartTime = Date.now();
+            const windowWidth = window.innerWidth;
+            ignoreSwipe = touchStartX < EDGE_THRESHOLD || touchStartX > windowWidth - EDGE_THRESHOLD;
+        }, { passive: true });
+        
+        document.addEventListener('touchend', (e) => {
+            if (!document.getElementById('lightbox').classList.contains('active')) return;
+            if (ignoreSwipe) return;
+            
+            const touchEndX = e.changedTouches[0].clientX;
+            const touchEndY = e.changedTouches[0].clientY;
+            const deltaTime = Date.now() - touchStartTime;
+            const deltaX = touchStartX - touchEndX;
+            const deltaY = touchStartY - touchEndY;
+            
+            if (deltaTime > TIME_THRESHOLD) return;
+            
+            if (Math.abs(deltaX) > SWIPE_THRESHOLD && Math.abs(deltaX) > Math.abs(deltaY)) {
+                navigate(deltaX > 0 ? 1 : -1);
+            } else if (Math.abs(deltaY) > SWIPE_THRESHOLD) {
+                navigate(deltaY > 0 ? 1 : -1);
+            }
+        }, { passive: false });
+        
+        load();
+
+        // ================= TG Station 整合 UI =================
+        (function () {
+            const $id = (i) => document.getElementById(i);
+            stationData = null;  // 复用全局声明（filterMedia 的 movie 过滤依赖它）
+            let stationToastTimer = null;
+
+            function showStationToast(msg, isErr) {
+                const t = $id('stationToast');
+                t.textContent = msg;
+                t.className = 'station-toast show' + (isErr ? ' err' : '');
+                clearTimeout(stationToastTimer);
+                stationToastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+            }
+
+            // 错误弹窗：替代原生 alert（原生弹窗会冻结页面且样式与界面不搭）。
+            // 挂到 window 上，让上半段脚本里的删除失败等场景也能用。
+            let errTimer = null;
+            window.showError = function (msg, title) {
+                const box = $id('errToast');
+                if (!box) return;
+                $id('errTitle').textContent = title || '操作失败';
+                $id('errMsg').textContent = msg || '未知错误';
+                box.classList.add('show');
+                clearTimeout(errTimer);
+                errTimer = setTimeout(() => box.classList.remove('show'), 6000);
+            };
+            (function initErrToast() {
+                const close = $id('errClose');
+                if (close) close.addEventListener('click', () => {
+                    $id('errToast').classList.remove('show');
+                    clearTimeout(errTimer);
+                });
+            })();
+
+            // 确认弹窗（Promise 化），替代原生 confirm
+            window.showConfirm = function (msg, title, okText) {
+                return new Promise((resolve) => {
+                    const ov = $id('confirmModal');
+                    if (!ov) { resolve(true); return; }   // 兜底：没有弹窗就直接放行
+                    $id('confirmTitle').textContent = title || '确认操作';
+                    $id('confirmMsg').textContent = msg || '';
+                    $id('confirmOk').textContent = okText || '确定';
+                    ov.classList.add('show');
+
+                    const done = (val) => {
+                        ov.classList.remove('show');
+                        $id('confirmOk').removeEventListener('click', onOk);
+                        $id('confirmCancel').removeEventListener('click', onNo);
+                        ov.removeEventListener('click', onBg);
+                        document.removeEventListener('keydown', onKey);
+                        resolve(val);
+                    };
+                    const onOk = () => done(true);
+                    const onNo = () => done(false);
+                    const onBg = (e) => { if (e.target === ov) done(false); };
+                    const onKey = (e) => {
+                        if (e.key === 'Escape') done(false);
+                        else if (e.key === 'Enter') done(true);
+                    };
+                    $id('confirmOk').addEventListener('click', onOk);
+                    $id('confirmCancel').addEventListener('click', onNo);
+                    ov.addEventListener('click', onBg);
+                    document.addEventListener('keydown', onKey);
+                    setTimeout(() => $id('confirmOk').focus(), 30);
+                });
+            };
+
+            // 筛选栏高度实测 -> 写入 CSS 变量，供日期标题吸顶定位使用。
+            // 用 ResizeObserver 而不是 window.resize：字体变化、筛选按钮换行也能跟上。
+            (function initStickyOffset() {
+                const header = document.querySelector('.header');
+                if (!header) return;
+                const apply = () => {
+                    const h = Math.round(header.getBoundingClientRect().height);
+                    if (h > 0) document.documentElement.style.setProperty('--header-h', h + 'px');
+                };
+                apply();
+                if (window.ResizeObserver) new ResizeObserver(apply).observe(header);
+                window.addEventListener('resize', apply);
+                // 滚动后给粘性头部加分隔线
+                let ticking = false;
+                window.addEventListener('scroll', () => {
+                    if (ticking) return;
+                    ticking = true;
+                    requestAnimationFrame(() => {
+                        const stuck = window.scrollY > 8;
+                        if (stuck !== header.classList.contains('stuck')) header.classList.toggle('stuck', stuck);
+                        ticking = false;
+                    });
+                }, { passive: true });
+            })();
+
+            async function stationFetch(url, opts) {
+                try {
+                    const res = await fetch(url, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opts));
+                    return await res.json();
+                } catch (e) {
+                    return { ok: false, error: '网络错误' };
+                }
+            }
+
+            function setStationVisual(running, state) {
+                const cls = running ? 'on' : (state === 'busy' ? 'busy' : 'off');
+                $id('stationDot').className = 'status-dot ' + cls;
+                $id('fabDot').className = 'fab-dot ' + cls;
+                $id('listenToggleBtn').textContent = running ? '⏹ 停止监听' : '▶ 开始监听';
+                $id('fabToggleBtn').textContent = running ? '⏹ 停止监听' : '▶ 开始监听';
+                $id('fabIcon').textContent = running ? '⏹' : '▶';
+            }
+
+            async function refreshStationStatus() {
+                const data = await stationFetch('/api/status');
+                if (!data.ok) {
+                    $id('stationStatusText').textContent = '后端离线';
+                    setStationVisual(false, 'off');
+                    return;
+                }
+                stationData = data;
+                const ls = data.listener || {};
+                const md = data.media || {};
+                let txt;
+                if (ls.running) txt = '监听中 · PID ' + ls.pid;
+                else if (ls.state === 'exited') txt = '已退出 (' + (ls.exitMsg || ('码 ' + ls.exitCode)) + ')';
+                else txt = '未运行';
+                if (md.total > 0) txt += ' · ' + md.total + ' 个文件';
+                $id('stationStatusText').textContent = txt;
+                setStationVisual(ls.running, ls.state);
+            }
+
+            // 下载进度面板：有下载任务时自动展开实时进度；无任务时默认收起，点击标题展开看当天记录
+            let dlExpanded = false;
+            function setDlExpanded(open) {
+                dlExpanded = open;
+                $id('dlBody').style.display = open ? '' : 'none';
+                $id('dlArrow').className = 'dl-arrow' + (open ? ' open' : '');
+            }
+
+            // 速度估算：记录上一次采样的累计字节与时刻
+            let dlPrevBytes = null;
+            let dlPrevAt = 0;
+            let dlWasActive = false;   // 上一轮是否在下载，用于识别"刚刚全部完成"
+            let dlDoneTimer = null;
+            let dlWaitUntil = 0;   // "开始监听"后的宽限窗口：让面板立即出现，不用干等状态轮询
+
+            function fmtSpeed(bytesPerSec) {
+                if (!bytesPerSec || bytesPerSec <= 0) return '—';
+                const kbs = bytesPerSec / 1024;
+                if (kbs < 1000) return kbs.toFixed(0) + ' KB/s';
+                return (kbs / 1024).toFixed(1) + ' MB/s';
+            }
+
+            function fmtEta(seconds) {
+                if (!isFinite(seconds) || seconds <= 0) return '—';
+                if (seconds < 60) return Math.ceil(seconds) + ' 秒';
+                const m = Math.floor(seconds / 60);
+                if (m < 60) return m + ' 分' + Math.round(seconds % 60) + ' 秒';
+                return Math.floor(m / 60) + ' 时' + (m % 60) + ' 分';
+            }
+
+            async function refreshDownloadProgress() {
+                const data = await stationFetch('/api/download/progress');
+                if (!data.ok) return;
+                const tasks = data.tasks || [];
+                const today = new Date();
+                const todayStr = ('0' + (today.getMonth() + 1)).slice(-2) + '-' + ('0' + today.getDate()).slice(-2);
+                const recent = (data.recent || []).filter(r => r.date === todayStr).slice(-5).reverse(); // 只看当天，最新在前
+                const hasTask = tasks.length > 0;
+                const hasRecent = recent.length > 0;
+                const panel = $id('downloadPanel');
+                // 面板只在「正在监听」或「有下载任务」时出现。
+                // 不因当天有历史下载记录而常驻（用户明确要求）。
+                const listening = !!(stationData && stationData.listener && stationData.listener.running);
+                if (listening) dlWaitUntil = 0;   // 已确认在监听，宽限窗口作废
+                const starting = dlWaitUntil > Date.now();
+                const wantShow = listening || hasTask || starting;
+
+                if (!wantShow) {
+                    // 隐藏；若刚从"有任务"变为空闲，短暂显示 4 秒完成提示
+                    const justFinished = dlWasActive;
+                    dlWasActive = false;
+                    panel.classList.remove('show', 'expanded');
+                    document.body.classList.remove('dl-open');
+                    $id('dlMeta').style.display = 'none';
+                    dlPrevBytes = null;
+                    clearTimeout(dlDoneTimer);
+                    if (justFinished) {
+                        const done = $id('dlDone');
+                        done.style.display = '';
+                        panel.classList.add('show');
+                        dlDoneTimer = setTimeout(() => {
+                            done.style.display = 'none';
+                            panel.classList.remove('show');
+                        }, 4000);
+                    } else {
+                        $id('dlDone').style.display = 'none';
+                    }
+                    return;
+                }
+                clearTimeout(dlDoneTimer);
+                $id('dlDone').style.display = 'none';
+                panel.classList.add('show');
+                document.body.classList.add('dl-open');
+
+                // ===== 总进度 / 速度 / 剩余时间 =====
+                if (hasTask) {
+                    dlWasActive = true;
+                    let doneBytes = 0, totalBytes = 0;
+                    tasks.forEach(t => {
+                        const dm = Number(t.done_mb) || 0;
+                        doneBytes += dm * 1048576;
+                        totalBytes += (Number(t.total_mb) || dm) * 1048576;
+                    });
+                    const now = performance.now();
+                    let speed = 0;
+                    if (dlPrevBytes !== null && now > dlPrevAt) {
+                        const dt = (now - dlPrevAt) / 1000;
+                        const db = doneBytes - dlPrevBytes;
+                        if (dt > 0.5 && db >= 0) speed = db / dt;
+                    }
+                    dlPrevBytes = doneBytes;
+                    dlPrevAt = now;
+
+                    const overallPct = totalBytes > 0 ? Math.min(100, doneBytes * 100 / totalBytes) : 0;
+                    $id('dlMeta').style.display = '';
+                    $id('dlOverallFill').style.width = overallPct.toFixed(1) + '%';
+                    $id('dlCount').textContent = tasks.length + ' 个 · ' + overallPct.toFixed(0) + '%';
+                    $id('dlSpeed').textContent = fmtSpeed(speed);
+                    $id('dlEta').textContent = (speed > 1024 && totalBytes > doneBytes)
+                        ? fmtEta((totalBytes - doneBytes) / speed) : '—';
+                } else {
+                    dlPrevBytes = null;
+                    $id('dlMeta').style.display = 'none';
+                }
+
+                // 摘要
+                let summary = '';
+                if (hasTask) summary = tasks.length + ' 个下载中';
+                else if (hasRecent) summary = '今天 ' + recent.length + ' 个';
+                $id('dlSummary').textContent = summary;
+
+                // 正在下载的任务
+                const tBox = $id('dlTasks');
+                if (hasTask) {
+                    tBox.innerHTML = tasks.map(t => {
+                        const pct = Math.min(100, Math.max(0, t.pct || 0));
+                        const mb = t.total_mb ? ' · ' + t.done_mb + ' / ' + t.total_mb + ' MB' : '';
+                        const fname = escHtml(t.file);
+                        return '<div class="dl-task">'
+                            + '<div class="dl-task-head"><span class="dl-task-name" title="' + fname + '">' + fname + '</span>'
+                            + '<span class="dl-task-pct">' + pct + '%' + mb + '</span></div>'
+                            + '<div class="dl-bar"><div class="dl-bar-fill" style="width:' + pct + '%"></div></div>'
+                            + '<div class="dl-task-actions"><button class="dl-cancel-btn" data-file="' + fname + '">✖ 取消此任务</button></div>'
+                            + '</div>';
+                    }).join('');
+                } else {
+                    tBox.innerHTML = '<div class="dl-empty">暂无正在下载的任务</div>';
+                }
+                // 最近完成记录（仅当天）
+                $id('dlRecentTitle').style.display = hasRecent ? '' : 'none';
+                $id('dlRecent').innerHTML = recent.map(r =>
+                    '<div class="dl-recent-item"><span class="dl-recent-time">' + escHtml((r.time || '')) + '</span>'
+                    + '<span class="dl-recent-file">' + escHtml(r.file || '') + '</span></div>'
+                ).join('');
+
+                // 有任务自动展开；无任务保持用户手动状态
+                if (hasTask && !dlExpanded) setDlExpanded(true);
+                if (!hasTask && dlExpanded && $id('dlTasks').innerHTML === '<div class="dl-empty">暂无正在下载的任务</div>') {
+                    // 任务全部结束后收起（回到折叠态）
+                    setDlExpanded(false);
+                }
+            }
+
+            async function toggleListen() {
+                const running = stationData && stationData.listener && stationData.listener.running;
+                const url = running ? '/api/listen/stop' : '/api/listen/start';
+                const btn = $id('listenToggleBtn');
+                const oldText = btn.textContent;
+                btn.textContent = '处理中…';
+                const res = await stationFetch(url, { method: 'POST', body: '{}' });
+                btn.textContent = oldText;
+                if (res.ok) {
+                    showStationToast(res.message || '操作成功');
+                    // 正在"开始"时先让面板立刻出现：下载器起来要几秒，
+                    // 干等 /api/status 报 running 会慢一拍。窗口 10 秒。
+                    dlWaitUntil = running ? 0 : Date.now() + 10000;
+                    for (let i = 0; i < 6; i++) {
+                        await new Promise(r => setTimeout(r, 1000));
+                        await refreshStationStatus();
+                        if (i === 0) await refreshDownloadProgress();
+                    }
+                    if (running) {   // 刚才是"停止"操作 → 立刻收起面板
+                        $id('downloadPanel').classList.remove('show', 'expanded');
+                        document.body.classList.remove('dl-open');
+                    } else {
+                        await refreshDownloadProgress();
+                    }
+                } else {
+                    showStationToast('操作失败: ' + (res.error || '未知错误'), true);
+                }
+            }
+
+            // 停止下载：终止当前所有下载任务（已下载文件保留）
+            async function stopDownload() {
+                const yes = await showConfirm('正在下载的任务会终止，已下载的文件保留。', '停止下载？', '停止下载');
+                if (!yes) return;
+                const btn = $id('dlStopBtn');
+                const oldText = btn.textContent;
+                btn.textContent = '停止中…';
+                btn.disabled = true;
+                const res = await stationFetch('/api/listen/stop', { method: 'POST', body: '{}' });
+                btn.textContent = oldText;
+                btn.disabled = false;
+                if (res.ok) {
+                    showStationToast(res.message || '下载已停止');
+                    await refreshStationStatus();
+                    await refreshDownloadProgress();
+                } else {
+                    showStationToast('操作失败: ' + (res.error || '未知错误'), true);
+                }
+            }
+
+            // 取消单个下载任务（写 cancel.json，下载器命中后放弃该任务）
+            async function cancelTask(file) {
+                const yes = await showConfirm(file, '取消这个下载任务？', '取消任务');
+                if (!yes) return;
+                const res = await stationFetch('/api/download/cancel', {
+                    method: 'POST',
+                    body: JSON.stringify({ file: file })
+                });
+                if (res.ok) {
+                    showStationToast(res.message || '已请求取消');
+                    await refreshDownloadProgress();
+                } else {
+                    showStationToast('操作失败: ' + (res.error || '未知错误'), true);
+                }
+            }
+
+            // ---------- 设置面板 ----------
+            const SETTING_GROUPS = [
+                { title: '下载设置', items: [
+                    { key: 'download_dir', label: '下载目录', type: 'text', full: true },
+                    { key: 'types', label: '下载类型', type: 'checks', options: ['photo', 'video', 'document'] },
+                    { key: 'max_file_size_mb', label: '最大文件大小 (MB)', type: 'number' },
+                    { key: 'concurrency', label: '并发数', type: 'number' },
+                    { key: 'retries', label: '失败重试次数', type: 'number' },
+                    { key: 'idle_stop_minutes', label: '空闲自动停止 (分钟, 0=关闭)', type: 'number' },
+                    { key: 'only_forwarded', label: '仅下载转发消息', type: 'checkbox' },
+                    { key: 'skip_gif', label: '跳过 GIF', type: 'checkbox' },
+                    { key: 'download_history', label: '启动时扫描历史', type: 'checkbox' },
+                    { key: 'login_method', label: '登录方式', type: 'select', options: ['qr', 'phone'] },
+                    { key: 'twofa_password', label: '2FA 密码', type: 'password' },
+                ]},
+                { title: '服务与脚本', items: [
+                    { key: 'media_browser.port', label: 'HTTP 端口', type: 'number' },
+                    { key: 'station.python', label: 'Python 解释器路径', type: 'text', full: true },
+                    { key: 'station.script', label: '下载器脚本路径', type: 'text', full: true },
+                    { key: 'station.media_dir', label: '媒体目录（留空 = 下载目录）', type: 'text', full: true },
+                    { key: 'station.auto_start', label: '程序启动时自动开始监听', type: 'checkbox' },
+                ]},
+            ];
+
+            function valOf(cfg, key) {
+                const parts = key.split('.');
+                let cur = cfg;
+                for (const p of parts) {
+                    if (cur === null || cur === undefined || typeof cur !== 'object') return undefined;
+                    cur = cur[p];
+                }
+                return cur;
+            }
+
+            function setVal(obj, key, v) {
+                const parts = key.split('.');
+                let cur = obj;
+                for (let i = 0; i < parts.length - 1; i++) {
+                    if (typeof cur[parts[i]] !== 'object' || cur[parts[i]] === null) cur[parts[i]] = {};
+                    cur = cur[parts[i]];
+                }
+                cur[parts[parts.length - 1]] = v;
+            }
+
+            function escHtml(s) {
+                return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            }
+
+            function renderSettingsForm(cfg) {
+                const body = $id('settingsBody');
+                // 记录当前已配置的频道（用于勾选回显 + 保存时收集）
+                const curChannels = (valOf(cfg, 'channels') || []).map(String);
+                window._stationChannels = curChannels;
+                // 登录状态面板（扫码登录入口）
+                let html = '<div class="modal-section-title">📱 登录状态</div>'
+                    + '<div class="login-panel">'
+                    + '<span class="login-status-text" id="loginStatusText">检查中…</span>'
+                    + '<button class="topbar-btn" id="scanLoginBtn">📱 扫码登录</button>'
+                    + '</div>'
+                    + '<div class="qr-container" id="qrContainer" style="display:none;">'
+                    + '<img id="qrImage" alt="Telegram 登录二维码">'
+                    + '<p class="qr-hint">打开手机 Telegram → 设置 → 设备 → 扫描二维码登录<br>二维码 120 秒内有效</p>'
+                    + '</div>'
+                    // 📡 频道选择器：勾选账号已加入的频道，替代手填 ID
+                    + '<div class="modal-section-title">📡 监听频道</div>'
+                    + '<div class="channel-panel">'
+                    + '<div class="channel-bar">'
+                    + '<span class="namelist-hint">勾选要监听的频道，保存后生效</span>'
+                    + '<button class="topbar-btn" id="loadChannelsBtn">🔄 加载频道列表</button>'
+                    + '</div>'
+                    + '<div id="channelList" class="channel-list"><span class="namelist-hint">点击「加载频道列表」从账号已加入的频道中勾选</span></div>'
+                    + '</div>'
+                    // 🎬 动漫名单编辑窗口：直接读写 mz.txt
+                    + '<div class="modal-section-title">🎬 动漫名单 (mz.txt)</div>'
+                    + '<div class="namelist-panel">'
+                    + '<textarea id="namelistEditor" class="namelist-editor" placeholder="每行一个动漫，格式：《动漫名》：角色1、角色2、角色3&#10;例如：《海贼王》：娜美、罗宾、女帝" spellcheck="false"></textarea>'
+                    + '<div class="namelist-bar">'
+                    + '<span class="namelist-hint">格式：每行《动漫名》：角色1、角色2，保存后立即生效</span>'
+                    + '<button class="topbar-btn primary" id="saveNameListBtn">💾 保存名单</button>'
+                    + '</div>'
+                    + '</div>';
+                for (const g of SETTING_GROUPS) {
+                    html += '<div class="modal-section-title">' + g.title + '</div><div class="form-grid">';
+                    for (const it of g.items) {
+                        const cls = 'form-item' + (it.full ? ' full' : '') + (it.type === 'checkbox' ? ' checkbox-item' : '');
+                        html += '<div class="' + cls + '">';
+                        if (it.type === 'checkbox') {
+                            html += '<input type="checkbox" id="f_' + it.key + '"' + (valOf(cfg, it.key) ? ' checked' : '') + '><label for="f_' + it.key + '">' + it.label + '</label>';
+                        } else if (it.type === 'checks') {
+                            const arr = valOf(cfg, it.key) || [];
+                            html += '<label>' + it.label + '</label><div style="display:flex;gap:14px;flex-wrap:wrap;">';
+                            for (const opt of it.options) {
+                                html += '<label style="display:flex;align-items:center;gap:5px;font-size:13px;color:#ddd;cursor:pointer;"><input type="checkbox" value="' + opt + '"' + (arr.includes(opt) ? ' checked' : '') + ' class="f-checks" data-group="f_' + it.key + '">' + opt + '</label>';
+                            }
+                            html += '</div>';
+                        } else if (it.type === 'select') {
+                            const v = valOf(cfg, it.key);
+                            const val = (v === null || v === undefined) ? '' : String(v);
+                            html += '<label for="f_' + it.key + '">' + it.label + '</label><select id="f_' + it.key + '">';
+                            for (const opt of it.options) {
+                                html += '<option value="' + opt + '"' + (val === opt ? ' selected' : '') + '>' + opt + '</option>';
+                            }
+                            html += '</select>';
+                        } else {
+                            const v = valOf(cfg, it.key);
+                            const val = (v === null || v === undefined) ? '' : String(v);
+                            const type = it.type === 'password' ? 'password' : (it.type === 'number' ? 'number' : 'text');
+                            html += '<label for="f_' + it.key + '">' + it.label + '</label>';
+                            html += '<input type="' + type + '" id="f_' + it.key + '" value="' + escHtml(val) + '">';
+                        }
+                        html += '</div>';
+                    }
+                    html += '</div>';
+                }
+                body.innerHTML = html;
+            }
+
+            async function openSettings() {
+                $id('settingsMsg').textContent = '';
+                $id('settingsMsg').className = 'modal-msg';
+                const res = await stationFetch('/api/settings');
+                if (!res.ok || !res.config) { showStationToast('读取设置失败', true); return; }
+                renderSettingsForm(res.config);
+                $id('settingsModal').style.display = 'flex';
+                refreshLoginStatus();
+                loadNameList();
+            }
+
+            // 加载频道列表：GET /api/channels 渲染勾选列表
+            async function loadChannels() {
+                const listEl = $id('channelList');
+                const btn = $id('loadChannelsBtn');
+                if (!listEl) return;
+                btn.disabled = true;
+                btn.textContent = '⏳ 加载中…';
+                listEl.innerHTML = '<span class="namelist-hint">正在连接 Telegram 拉取频道…</span>';
+                const res = await stationFetch('/api/channels');
+                btn.disabled = false;
+                btn.textContent = '🔄 加载频道列表';
+                if (!res.ok) {
+                    const hint = (res.error || '加载失败').indexOf('下载器正在运行') >= 0
+                        ? '⏹ 请先点击顶部「停止监听」，再加载频道列表'
+                        : (res.error || '加载失败');
+                    listEl.innerHTML = '<span class="namelist-hint" style="color:#ef4444;">❌ ' + hint + '</span>';
+                    return;
+                }
+                const chans = res.channels || [];
+                const cur = window._stationChannels || [];
+                if (!chans.length) {
+                    listEl.innerHTML = '<span class="namelist-hint">没有找到频道，请确认账号已加入频道</span>';
+                    return;
+                }
+                listEl.innerHTML = chans.map(c => {
+                    const id = String(c.id);
+                    const checked = cur.includes(id) || cur.includes(String(c.title)) ? ' checked' : '';
+                    return '<label class="channel-item">'
+                        + '<input type="checkbox" class="channel-cb" value="' + id + '"' + checked + '>'
+                        + '<span class="ch-title">' + escHtml(c.title || '(未命名)') + '</span>'
+                        + '<span class="ch-id">' + id + '</span>'
+                        + '</label>';
+                }).join('');
+            }
+
+            // 加载名单文件内容到编辑窗口
+            async function loadNameList() {
+                const el = $id('namelistEditor');
+                if (!el) return;
+                el.value = '加载中…';
+                const res = await stationFetch('/api/namelist');
+                if (res.ok) {
+                    el.value = res.content || '';
+                } else {
+                    el.value = '';
+                    showStationToast('读取名单失败: ' + (res.error || '未知错误'), true);
+                }
+            }
+
+            // 保存名单文件内容（无需重启下载器，Python 按 mtime 自动重载）
+            async function saveNameList() {
+                const el = $id('namelistEditor');
+                if (!el) return;
+                const msgEl = $id('settingsMsg');
+                msgEl.textContent = '保存名单中…';
+                msgEl.className = 'modal-msg';
+                const res = await stationFetch('/api/namelist', { method: 'POST', body: JSON.stringify({ content: el.value }) });
+                if (res.ok) {
+                    msgEl.textContent = '✅ 名单已保存（下载器自动生效）';
+                    msgEl.className = 'modal-msg';
+                    showStationToast('💾 名单已保存');
+                } else {
+                    msgEl.textContent = '❌ ' + (res.error || '保存失败');
+                    msgEl.className = 'modal-msg err';
+                }
+            }
+
+            function closeSettings() {
+                clearInterval(loginPollTimer);
+                $id('settingsModal').style.display = 'none';
+            }
+
+            function collectSettings() {
+                const out = {};
+                for (const g of SETTING_GROUPS) {
+                    for (const it of g.items) {
+                        const el = $id('f_' + it.key);
+                        if (!el) continue;
+                        if (it.type === 'checkbox') setVal(out, it.key, el.checked);
+                        else if (it.type === 'checks') {
+                            const arr = [];
+                            document.querySelectorAll('.f-checks[data-group="f_' + it.key + '"]').forEach(c => { if (c.checked) arr.push(c.value); });
+                            setVal(out, it.key, arr);
+                        } else if (it.type === 'number') {
+                            const n = parseInt(el.value, 10);
+                            setVal(out, it.key, isNaN(n) ? 0 : n);
+                        } else if (it.type === 'select') {
+                            setVal(out, it.key, el.value === 'none' ? null : el.value);
+                        } else {
+                            setVal(out, it.key, el.value);
+                        }
+                    }
+                }
+                // 频道选择器：收集勾选的频道（未加载列表时保留原配置）
+                const cbList = document.querySelectorAll('.channel-cb');
+                if (cbList.length) {
+                    out.channels = Array.from(cbList).filter(c => c.checked).map(c => c.value);
+                }
+                // channels 逗号拆分（兼容旧文本输入）
+                if (typeof out.channels === 'string') {
+                    out.channels = out.channels.split(/[,，\s]+/).filter(Boolean);
+                }
+                return out;
+            }
+
+            async function saveSettings() {
+                const data = collectSettings();
+                const msgEl = $id('settingsMsg');
+                msgEl.textContent = '保存中…';
+                msgEl.className = 'modal-msg';
+                const res = await stationFetch('/api/settings', { method: 'POST', body: JSON.stringify(data) });
+                if (res.ok) {
+                    msgEl.textContent = res.restarted ? '✅ 已保存，下载器已重启应用新配置' : '✅ 已保存';
+                    setTimeout(closeSettings, 1200);
+                    refreshStationStatus();
+                } else {
+                    msgEl.textContent = '❌ ' + (res.error || '保存失败');
+                    msgEl.className = 'modal-msg err';
+                }
+            }
+
+            // ---------- 扫码登录 ----------
+            let loginPollTimer = null;
+
+            async function refreshLoginStatus() {
+                const res = await stationFetch('/api/login/status');
+                if (!res.ok) return;
+                const el = $id('loginStatusText');
+                if (res.status === 'logged_in') {
+                    el.textContent = '✅ 已登录';
+                    el.className = 'login-status-text ok';
+                    $id('qrContainer').style.display = 'none';
+                } else {
+                    el.textContent = '❌ 未登录';
+                    el.className = 'login-status-text';
+                }
+            }
+
+            async function scanLogin() {
+                const btn = $id('scanLoginBtn');
+                btn.disabled = true;
+                btn.textContent = '连接中…';
+                const res = await stationFetch('/api/login/qr');
+                btn.disabled = false;
+                btn.textContent = '📱 扫码登录';
+                if (!res.ok) {
+                    showStationToast('❌ ' + (res.error || '登录失败'), true);
+                    return;
+                }
+                if (res.status === 'already' || res.status === 'success') {
+                    $id('loginStatusText').textContent = '✅ 已登录 @' + (res.username || '');
+                    $id('loginStatusText').className = 'login-status-text ok';
+                    $id('qrContainer').style.display = 'none';
+                    showStationToast('🎉 已登录 ' + (res.username || ''));
+                    return;
+                }
+                if (res.status === 'qr') {
+                    $id('qrImage').src = res.qr;
+                    $id('qrContainer').style.display = 'block';
+                    $id('loginStatusText').textContent = '⏳ 请用手机 Telegram 扫码';
+                    $id('loginStatusText').className = 'login-status-text';
+                    pollLoginResult();
+                    return;
+                }
+            }
+
+            // 扫码后轮询登录结果：每 2 秒，最多 60 秒
+            function pollLoginResult() {
+                clearInterval(loginPollTimer);
+                const start = Date.now();
+                loginPollTimer = setInterval(async () => {
+                    const st = await stationFetch('/api/login/status');
+                    if (st.ok && st.status === 'logged_in') {
+                        clearInterval(loginPollTimer);
+                        // 验证并获取用户名（已登录时不会生成新二维码）
+                        const v = await stationFetch('/api/login/qr');
+                        if (v.ok && (v.status === 'already' || v.status === 'success')) {
+                            $id('loginStatusText').textContent = '✅ 已登录 @' + (v.username || '');
+                            $id('loginStatusText').className = 'login-status-text ok';
+                            $id('qrContainer').style.display = 'none';
+                            showStationToast('🎉 扫码登录成功');
+                            return;
+                        }
+                        // session 文件存在但未真正登录（过期）→ 展示新二维码
+                        if (v.ok && v.status === 'qr') {
+                            $id('qrImage').src = v.qr;
+                            $id('loginStatusText').textContent = '⏳ 二维码已刷新，请重新扫码';
+                            return;
+                        }
+                        return;
+                    }
+                    if (Date.now() - start > 60 * 1000) {
+                        clearInterval(loginPollTimer);
+                        $id('qrContainer').style.display = 'none';
+                        $id('loginStatusText').textContent = '⏰ 扫码超时，请重试';
+                        $id('loginStatusText').className = 'login-status-text';
+                        showStationToast('⏰ 扫码超时，请重试', true);
+                    }
+                }, 2000);
+            }
+
+            async function refreshMediaNow() {
+                // 记录刷新前的文件数，只有变化（新文件/删除）才重载列表，避免浏览中页面乱跳
+                let before = -1;
+                try {
+                    const st = await stationFetch('/api/status');
+                    if (st.ok && st.media) before = st.media.total;
+                } catch (e) {}
+                const res = await stationFetch('/api/refresh', { method: 'POST', body: '{}' });
+                if (res.ok) {
+                    showStationToast('🔄 正在刷新媒体索引…');
+                    setTimeout(async () => {
+                        await refreshStationStatus();
+                        const after = stationData && stationData.media ? stationData.media.total : -1;
+                        if (before === after) return; // 无变化不重载
+                        // 有变化：走带代际保护的完整重载（旧分页循环会被作废，
+                        // 不会再往新列表里 push 旧页数据；筛选按钮同步回"全部"）
+                        await reloadMedia();
+                    }, 4000);
+                } else showStationToast('刷新失败: ' + (res.error || '未知错误'), true);
+            }
+
+            function initStationUI() {
+                $id('listenToggleBtn').addEventListener('click', toggleListen);
+                $id('settingsBtn').addEventListener('click', openSettings);
+                $id('settingsCloseBtn').addEventListener('click', closeSettings);
+                $id('saveSettingsBtn').addEventListener('click', saveSettings);
+                $id('stationFab').addEventListener('click', () => {
+                    const m = $id('fabMenu');
+                    m.style.display = m.style.display === 'none' ? 'flex' : 'none';
+                });
+                $id('fabToggleBtn').addEventListener('click', () => { $id('fabMenu').style.display = 'none'; toggleListen(); });
+                $id('fabRefreshBtn').addEventListener('click', () => { $id('fabMenu').style.display = 'none'; refreshMediaNow(); });
+                $id('fabSettingsBtn').addEventListener('click', () => { $id('fabMenu').style.display = 'none'; openSettings(); });
+                $id('dlHeader').addEventListener('click', () => {
+                    // 小屏下点标题行：展开/收起整卡；大屏沿用折叠任务列表
+                    const panel = $id('downloadPanel');
+                    setDlExpanded(!dlExpanded);
+                    if (window.matchMedia('(max-width: 640px)').matches) {
+                        panel.classList.toggle('expanded', dlExpanded);
+                    }
+                });
+                $id('dlStopBtn').addEventListener('click', (e) => { e.stopPropagation(); stopDownload(); });
+                // 多选角标上的一键清空
+                const clearBtn = $id('selClearBtn');
+                if (clearBtn) clearBtn.addEventListener('click', clearSelection);
+                // 单任务取消按钮：动态渲染，用事件委托
+                $id('dlTasks').addEventListener('click', (e) => {
+                    const btn = e.target.closest('.dl-cancel-btn');
+                    if (btn) { e.stopPropagation(); cancelTask(btn.getAttribute('data-file')); }
+                });
+                // scanLoginBtn 由 renderSettingsForm 动态生成，用事件委托绑定
+                $id('settingsBody').addEventListener('click', (e) => {
+                    if (e.target.id === 'scanLoginBtn') scanLogin();
+                    if (e.target.id === 'saveNameListBtn') saveNameList();
+                    if (e.target.id === 'loadChannelsBtn') loadChannels();
+                });
+                document.addEventListener('click', (e) => {
+                    const m = $id('fabMenu');
+                    if (m.style.display !== 'none' && !e.target.closest('#stationFab') && !e.target.closest('#fabMenu')) m.style.display = 'none';
+                });
+                $id('settingsModal').addEventListener('click', (e) => { if (e.target.id === 'settingsModal') closeSettings(); });
+
+                refreshStationStatus();
+                refreshMediaNow(); // F5/刷新页面即检查新文件并生成缩略图
+                setInterval(() => { if (!document.hidden) { refreshStationStatus(); refreshDownloadProgress(); } }, 5000);
+            }
+
+            initStationUI();
+
+            // 版本标识：数字 = 本页面大小(KB) + 内联脚本总字节数。
+            // 页面一改这个数字就变，用来快速判断浏览器加载的是新版还是缓存旧版。
+            (function stampBuild() {
+                try {
+                    const el = document.getElementById('buildStamp');
+                    if (!el) return;
+                    const kb = Math.round(document.documentElement.outerHTML.length / 1024);
+                    let jsBytes = 0;
+                    document.querySelectorAll('script').forEach(s => { jsBytes += (s.textContent || '').length; });
+                    el.textContent = 'v' + kb + '.' + jsBytes;
+                    el.title = '页面版本 v' + kb + '.' + jsBytes +
+                        '\n页面大小 ' + kb + ' KB，内联脚本 ' + jsBytes + ' 字节' +
+                        '\n若与部署版本不一致，按 Ctrl+Shift+R 强制刷新';
+                } catch (e) { /* 版本标识失败不影响功能 */ }
+            })();
+        })();
+    </script>
+
+
+</body></html>
