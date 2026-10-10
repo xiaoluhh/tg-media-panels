@@ -3,10 +3,10 @@
 本文件是把 `tg-station/` 目录下**全部源码、测试、前端、构建脚本**按顺序拼成的单文件，
 方便一次性阅读或用抓取工具获取（GitHub 子目录页面有时不可访问，读这一个文件即可）。
 
-## 文件清单（45 个）
+## 文件清单（46 个）
 
 - `README.md` （17811 字节）
-- `api.go` （19742 字节）
+- `api.go` （22054 字节）
 - `cli_integration_test.go` （1810 字节）
 - `console_other.go` （142 字节）
 - `console_windows.go` （802 字节）
@@ -15,6 +15,7 @@
 - `files_pagination_test.go` （5817 字节）
 - `index.go` （3552 字节）
 - `index_test.go` （5033 字节）
+- `login_qr_test.go` （4986 字节）
 - `main.go` （17881 字节）
 - `media_handlers_test.go` （11605 字节）
 - `pathsafe.go` （14325 字节）
@@ -51,7 +52,7 @@
 - `tg_downloader.spec` （1487 字节）
 - `tg_downloader_cli.spec` （2238 字节）
 
-合计正文约 413 KB。
+合计正文约 418 KB。
 
 
 ---
@@ -680,21 +681,87 @@ func refreshHandler(w http.ResponseWriter, r *http.Request) {
 
 // 扫码登录进程管理：二维码生成后进程需继续挂起等待扫码（最多 120 秒），
 // 所以不能等进程退出——读到第一行 JSON 就返回，进程留待扫码/超时后自行退出。
+//
+// 三条不变量（都踩过坑，改这里必须保住）：
+//  1. 一个 cmd 只能 Wait 一次。唯一收尸者 = reapQr 起的那个 goroutine，
+//     其它任何地方（包括 kill 路径）都不许再 cmd.Wait()，否则是数据竞态。
+//  2. 只对「确认还活着」的进程执行 kill。进程自然退出后由收尸者清掉引用，
+//     因为 Windows/Linux 都会复用 PID——拿旧 PID 去 taskkill /T 可能杀掉无关进程树。
+//  3. 「作废旧进程 → 启动新进程 → 记录新进程」必须在同一把锁里完成，
+//     否则两个并发的 /api/login/qr 会各起一个进程，两个进程共用一个 session
+//     有被判「异地同时使用」而封号的风险（见 Downloader.Start 的同类约定）。
+type qrProcState struct {
+	cmd  *exec.Cmd
+	done chan struct{} // 进程被收尸（Wait 返回）后由 reapQr 关闭
+}
+
 var (
-	qrProcMu sync.Mutex
-	qrProc   *exec.Cmd // 正在等待扫码的进程（下次生成前杀掉，避免堆积）
+	qrMu  sync.Mutex   // 串行化上面第 3 条
+	qrCur *qrProcState // 当前等待扫码的进程；nil = 当前没有
+
+	// 等旧进程真正死掉的时限；超时只记日志，不阻塞后续流程
+	qrKillWait = 5 * time.Second
+
+	// 以下两个是测试钩子，生产环境分别为 killProcessTree / downloader.startQrLogin
+	qrKillTree = killProcessTree
+	qrStart    = func() (*exec.Cmd, map[string]interface{}, string, error) {
+		return downloader.startQrLogin(qrFirstLineTimeout)
+	}
 )
 
-// killQrProcLocked 作废上一个等待扫码的进程（调用方需持有 qrProcMu）。
-func killQrProcLocked() {
-	if qrProc == nil {
+// reapQr 是扫码子进程唯一的收尸者：Wait 一次、关闭 done、清掉引用。
+// ⚠ 顺序不能颠倒：先 close(done) 再抢 qrMu——killQrLocked 是持着 qrMu 等 done 的，
+// 反过来写就是死锁。
+func reapQr(st *qrProcState) {
+	_ = st.cmd.Wait()
+	close(st.done)
+	qrMu.Lock()
+	if qrCur == st {
+		qrCur = nil
+	}
+	qrMu.Unlock()
+}
+
+// killQrLocked 作废当前等待扫码的进程（调用方必须持有 qrMu）。
+// 已经退出的进程直接跳过：绝不对可能已被复用的旧 PID 下手。
+func killQrLocked() {
+	st := qrCur
+	qrCur = nil
+	if st == nil {
 		return
 	}
-	if qrProc.Process != nil {
-		_ = killProcessTree(qrProc.Process.Pid)
-		_ = qrProc.Wait()
+	select {
+	case <-st.done: // 已收尸（自己退出了）
+		return
+	default:
 	}
-	qrProc = nil
+	if st.cmd.Process != nil {
+		_ = qrKillTree(st.cmd.Process.Pid)
+	}
+	// 等它真的退出，避免新旧两个进程同时持有 session
+	select {
+	case <-st.done:
+	case <-time.After(qrKillWait):
+		log.Printf("[station] 旧扫码进程在 %s 内未退出，继续启动新的", qrKillWait)
+	}
+}
+
+// beginQrLogin 在锁内完成「作废旧进程 → 启动新进程 → 记录并挂收尸」，返回第一行 JSON。
+// 整个过程持锁，因此并发的扫码请求会被串行化：后来的请求会先杀掉前一个进程。
+func beginQrLogin() (*exec.Cmd, map[string]interface{}, string, error) {
+	qrMu.Lock()
+	defer qrMu.Unlock()
+
+	killQrLocked()
+
+	cmd, result, desc, err := qrStart()
+	if err != nil {
+		return nil, nil, desc, err
+	}
+	st := &qrProcState{cmd: cmd, done: make(chan struct{})}
+	qrCur = st
+	go reapQr(st)
+	return cmd, result, desc, nil
 }
 
 // loginQrHandler 生成登录二维码 / 检查是否已登录：
@@ -707,20 +774,13 @@ func loginQrHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 作废上一张二维码：杀掉上一个等待扫码的进程
-	qrProcMu.Lock()
-	killQrProcLocked()
-	qrProcMu.Unlock()
-
-	cmd, result, desc, err := downloader.startQrLogin(qrFirstLineTimeout)
+	// 作废旧二维码 + 启动新进程 + 记录，全部在 beginQrLogin 的锁内完成
+	_, result, desc, err := beginQrLogin()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	log.Printf("[station] 扫码登录进程已启动：%s", desc)
-
-	// 收尸：扫码成功/超时后进程自行退出
-	go func() { _ = cmd.Wait() }()
 
 	switch result["status"] {
 	case "already", "success":
@@ -736,10 +796,6 @@ func loginQrHandler(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusInternalServerError, "二维码生成失败")
 			return
 		}
-		// 记录等待中的进程，下次生成前作废
-		qrProcMu.Lock()
-		qrProc = cmd
-		qrProcMu.Unlock()
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"ok":     true,
 			"status": "qr",
@@ -2888,6 +2944,194 @@ func BenchmarkFilesByDateIndexed(b *testing.B) {
 		if len(out) == 0 {
 			b.Fatal("基准数据异常：当天无文件")
 		}
+	}
+}
+
+```
+
+
+---
+
+## 文件：login_qr_test.go
+
+```go
+package main
+
+import (
+	"os/exec"
+	"runtime"
+	"strconv"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+)
+
+// sleepCmd 起一个会自己活一小段时间的子进程（Windows 用 ping，其它平台用 sleep）。
+// 用来模拟「等待扫码的下载器子进程」：既能自然退出，也能被 kill。
+func sleepCmd(seconds int) *exec.Cmd {
+	if runtime.GOOS == "windows" {
+		return exec.Command("ping", "-n", strconv.Itoa(seconds+1), "127.0.0.1")
+	}
+	return exec.Command("sleep", strconv.Itoa(seconds))
+}
+
+// newTestQrProc 起子进程并按生产同一条路径挂上唯一收尸者。
+func newTestQrProc(t *testing.T, cmd *exec.Cmd) *qrProcState {
+	t.Helper()
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("启动测试子进程失败: %v", err)
+	}
+	st := &qrProcState{cmd: cmd, done: make(chan struct{})}
+	go reapQr(st)
+	return st
+}
+
+// swapQrHooks 换掉测试钩子，返回还原函数。
+func swapQrHooks(killer func(int) error, start func() (*exec.Cmd, map[string]interface{}, string, error)) func() {
+	oldKill, oldStart := qrKillTree, qrStart
+	qrKillTree, qrStart = killer, start
+	return func() { qrKillTree, qrStart = oldKill, oldStart }
+}
+
+// passThroughKiller 真杀进程（调生产实现），只额外计数。
+func passThroughKiller(counter *int32) func(int) error {
+	return func(pid int) error {
+		atomic.AddInt32(counter, 1)
+		return killProcessTree(pid)
+	}
+}
+
+func setQrCur(st *qrProcState) {
+	qrMu.Lock()
+	qrCur = st
+	qrMu.Unlock()
+}
+
+func qrCurSnapshot() *qrProcState {
+	qrMu.Lock()
+	defer qrMu.Unlock()
+	return qrCur
+}
+
+func waitDone(t *testing.T, st *qrProcState, d time.Duration, what string) {
+	t.Helper()
+	select {
+	case <-st.done:
+	case <-time.After(d):
+		t.Fatalf("%s：%s 内没有等到进程被收尸", what, d)
+	}
+}
+
+// 进程自然退出后，引用必须被收尸者清掉——否则下次扫码会拿旧 PID 去 taskkill，
+// 而 PID 可能已经被系统复用给别的进程。
+func TestReapQrClearsReferenceAfterExit(t *testing.T) {
+	st := newTestQrProc(t, sleepCmd(1))
+	setQrCur(st)
+
+	waitDone(t, st, 20*time.Second, "自然退出")
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if qrCurSnapshot() == nil {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("子进程自然退出后 qrCur 仍指向旧进程（旧 PID 可能已被复用）")
+}
+
+// 已经退出的进程一律不许再 kill。
+func TestKillQrLockedSkipsExitedProcess(t *testing.T) {
+	var kills int32
+	restore := swapQrHooks(func(pid int) error {
+		atomic.AddInt32(&kills, 1)
+		return nil
+	}, qrStart)
+	defer restore()
+
+	st := newTestQrProc(t, sleepCmd(1))
+	waitDone(t, st, 20*time.Second, "自然退出")
+
+	// 复现旧实现的隐患场景：进程已退出，引用还挂着
+	setQrCur(st)
+
+	qrMu.Lock()
+	killQrLocked()
+	qrMu.Unlock()
+
+	if n := atomic.LoadInt32(&kills); n != 0 {
+		t.Fatalf("对已退出的进程调用了 %d 次 kill（PID 可能已被复用，会误杀无关进程）", n)
+	}
+	if qrCurSnapshot() != nil {
+		t.Fatal("killQrLocked 之后 qrCur 没有清空")
+	}
+}
+
+// 活着的进程：kill 一次，并且要等它真的退出（done 关闭）。
+func TestKillQrLockedKillsLiveProcess(t *testing.T) {
+	var kills int32
+	restore := swapQrHooks(passThroughKiller(&kills), qrStart)
+	defer restore()
+
+	st := newTestQrProc(t, sleepCmd(30))
+	setQrCur(st)
+
+	qrMu.Lock()
+	killQrLocked()
+	qrMu.Unlock()
+
+	if n := atomic.LoadInt32(&kills); n != 1 {
+		t.Fatalf("活着的进程应恰好被 kill 1 次，实际 %d 次", n)
+	}
+	waitDone(t, st, 10*time.Second, "被 kill 后")
+	if qrCurSnapshot() != nil {
+		t.Fatal("killQrLocked 之后 qrCur 没有清空")
+	}
+}
+
+// 并发的扫码请求必须被串行化：每个后来的请求都要先杀掉前一个进程，
+// 最终只留一个。若「kill 与 set」不在同一把锁里，就统计不到 n-1 次 kill，
+// 而且会有多个进程同时存在（共用 session 有封号风险）。
+func TestBeginQrLoginSerializesKillAndStart(t *testing.T) {
+	var kills, starts int32
+	restore := swapQrHooks(passThroughKiller(&kills),
+		func() (*exec.Cmd, map[string]interface{}, string, error) {
+			atomic.AddInt32(&starts, 1)
+			cmd := sleepCmd(30)
+			if err := cmd.Start(); err != nil {
+				return nil, nil, "", err
+			}
+			return cmd, map[string]interface{}{"status": "qr"}, "测试后端", nil
+		})
+	defer restore()
+
+	const n = 4
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, _, _, err := beginQrLogin(); err != nil {
+				t.Errorf("beginQrLogin 失败: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if s := atomic.LoadInt32(&starts); s != n {
+		t.Fatalf("启动次数 %d，期望 %d", s, n)
+	}
+	if k := atomic.LoadInt32(&kills); k != n-1 {
+		t.Fatalf("并发扫码未串行化：期望 kill %d 次（每个新请求杀掉前一个），实际 %d 次", n-1, k)
+	}
+
+	// 收尾，别留测试进程
+	qrMu.Lock()
+	killQrLocked()
+	qrMu.Unlock()
+	if qrCurSnapshot() != nil {
+		t.Fatal("测试收尾后 qrCur 应为 nil")
 	}
 }
 
