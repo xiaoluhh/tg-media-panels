@@ -24,6 +24,8 @@ thumbs/
 qr_login.png
 
 # Telethon 会话（含登录凭据，绝不入库）
+*.session
+*.session-journal
 tg_session.session
 tg_session.session-journal
 tg_session.authorized

@@ -1,5 +1,11 @@
 # TG 媒体面板源码（media-browser + tg-station）
 
+> **想一次读完所有源码？** 看仓库根目录的 [`SOURCE-ALL.md`](SOURCE-ALL.md) ——
+> 里面把 `tg-station/` 的全部源码、测试、前端与构建脚本按顺序拼成了一个文件，
+> 不需要逐个打开子目录（GitHub 子目录页面/子 README 有时会 503）。
+> 原始文件直链形如 `https://raw.githubusercontent.com/xiaoluhh/tg-media-panels/main/tg-station/main.go`。
+
+
 本仓库是同一台机器上两个 **Go + 原生前端** 项目的源码快照，用于代码阅读与讨论。
 
 - 语言：Go（仅标准库，无第三方 Web 框架）
