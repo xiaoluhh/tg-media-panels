@@ -102,7 +102,7 @@ if (Test-Path $cliSrc) {
 } else {
     Say '   !! dist\tg_downloader_cli.exe missing - QR/login/channels fall back to python + script'
 }
-foreach ($f in 'index.html', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png') {
+foreach ($f in 'index.html', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png', 'datejump.js', 'datejump.css') {
     $src = Join-Path $repo ("static\" + $f)
     if (Test-Path $src) {
         Copy-Item $src (Join-Path $station ("static\" + $f)) -Force

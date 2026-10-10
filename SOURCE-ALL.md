@@ -3,9 +3,9 @@
 本文件是把 `tg-station/` 目录下**全部源码、测试、前端、构建脚本**按顺序拼成的单文件，
 方便一次性阅读或用抓取工具获取（GitHub 子目录页面有时不可访问，读这一个文件即可）。
 
-## 文件清单（48 个）
+## 文件清单（50 个）
 
-- `README.md` （17811 字节）
+- `README.md` （19696 字节）
 - `api.go` （22301 字节）
 - `cli_integration_test.go` （1810 字节）
 - `console_other.go` （142 字节）
@@ -36,13 +36,15 @@
 - `testdata/mockcli/main.go` （2684 字节）
 - `thumbs.go` （15311 字节）
 - `thumbs_test.go` （15286 字节）
+- `static/datejump.css` （5214 字节）
+- `static/datejump.js` （9685 字节）
 - `static/icon-192.png` （二进制，未内联）
 - `static/icon-512.png` （二进制，未内联）
 - `static/icon.svg` （721 字节）
-- `static/index.html` （184441 字节）
+- `static/index.html` （187908 字节）
 - `static/manifest.json` （644 字节）
 - `.gitignore` （1286 字节）
-- `_deploy.ps1` （7808 字节）
+- `_deploy.ps1` （7839 字节）
 - `_start.ps1` （2993 字节）
 - `build_downloader_cli.ps1` （1574 字节）
 - `config.json` （921 字节）
@@ -54,7 +56,7 @@
 - `tg_downloader.spec` （1487 字节）
 - `tg_downloader_cli.spec` （2238 字节）
 
-合计正文约 427 KB。
+合计正文约 444 KB。
 
 
 ---
@@ -76,6 +78,8 @@ Telegram 转发内容自动下载 + 本地媒体浏览。三个进程各司其�
 ## 功能特性
 
 - 媒体浏览：按日期分组（倒序）、照片/视频/影视筛选、视频缩略图（需 FFmpeg）
+- 日期跳转：**点吸顶的日期** → 弹出日期面板（原生日期选择器 + 可用日期列表）→ 只看那一天，
+  日期行右侧有「返回时间线」；单日模式下筛选按钮仍在该天内生效
 - 视频播放：自定义控制条、±10 秒、1x/1.5x/2x/3x 倍速、全屏、**影视续播进度**
 - 下载器管理：网页一键 开始/停止 监听，按进程名检测与复用（**绝不重复启动，防双实例共用 session 被封号**）
 - 扫码登录：设置面板一键生成二维码，手机 Telegram 扫码（依赖 `pip install qrcode[pil]`）
@@ -243,6 +247,26 @@ Go 端只解析自己需要的字段，其余（api_id、channels、proxy 等）
 
 > Windows 上 `go test -race` 需要 cgo（本机无 gcc 会报 `-race requires cgo`）；这种情况下用
 > 「并发用例 + `-count=N` 重复」作为证据，**不要把没跑成的 race 说成通过**。
+
+## 按日期快速跳转（static/datejump.js + datejump.css）
+
+**一个功能一套文件**：交互与样式全在两个独立文件里，主文件只留「状态 + 抓取」。
+
+- **入口**：点任意吸顶日期（`.date-header`，右侧有「日历图标 + 小三角」提示）→ 底部面板：
+  原生日期选择器（可跳到任意日期）+ 可用日期列表（带周几、今天/当前标记）。
+- **行为**：选中日期 = 「单日模式」——列表只装这一天的文件（分页抓完）、不向前加载其它日期，
+  吸顶行右侧出现「返回时间线」。单日模式下照片/视频/影视筛选仍在该天内生效；
+  该天没有符合筛选的内容时空提示会写明原因。
+- **分层**：主文件（`static/index.html`）只暴露 `window.DateJumpBridge`
+  （`dates / focusDate / isSelectMode / icon / focus / clear`），模块通过它取数据、驱动列表；
+  模块回调用 `window.DateJumpUI.syncFocus(date)` 通知单日模式开关。
+  **状态只有一份**（在主文件里），模块不另存 allMedia/allDates。
+- **吸顶行提示是运行时注入的**（MutationObserver + 幂等标记）：`render()` 与
+  `sectionItemsHTML()` 两处生成格子/日期行的写法都不用改。
+- **单日模式的返回入口**做成吸顶行右侧的小胶囊，**不要用悬浮条**：393px 窄屏实测悬浮条会
+  跟状态行打架、文字折成三行。
+- ⚠ **新增静态文件必须同步两处**：`_deploy.ps1` 的 static 拷贝清单，以及树莓派那边
+  `staticDir` 下同样的文件（前端是读磁盘的，改完刷新即生效，不需要重启服务）。
 
 ## 前端网格：性能与显示约定（static/index.html）
 
@@ -8035,6 +8059,412 @@ func TestRenderThumbAtomicRealVideo(t *testing.T) {
 
 ---
 
+## 文件：static/datejump.css
+
+```text
+/* ============================================================
+   按日期快速跳转 —— 样式
+   点吸顶日期 → 底部面板（日期输入 + 日期列表）→ 只看某一天。
+   交互与 DOM 在 static/datejump.js；这里只管外观。
+   颜色一律取自 index.html 的设计变量，不新增硬编码色值。
+   ============================================================ */
+
+/* 吸顶日期可点：小手光标 + 右侧「日历图标 + 小三角」提示 */
+.date-header {
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.date-header .dj-hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    color: var(--fg-6);
+    flex: none;
+}
+.date-header .dj-hint .ic { width: 1em; height: 1em; vertical-align: -0.1em; }
+/* 小三角也画出来（不用文字字形，遵守 Drawn-Never-Typed） */
+.date-header .dj-hint i {
+    width: 0; height: 0; display: inline-block;
+    border-left: 4.5px solid transparent;
+    border-right: 4.5px solid transparent;
+    border-top: 5px solid currentColor;
+    transition: transform .15s ease;
+}
+.date-header:active .dj-hint { color: var(--brand-soft); }
+.date-header:active .dj-hint i { transform: translateY(1px); }
+/* 选择模式下日期行里放的是「已选 N 个」，不给跳转暗示 */
+.date-header:has(.select-hint) .dj-hint { display: none; }
+
+/* ---------- 遮罩与面板（移动端底部抽屉） ---------- */
+.dj-mask {
+    position: fixed; inset: 0; z-index: 1300;
+    background: var(--overlay-modal);
+    opacity: 0; pointer-events: none;
+    transition: opacity .18s ease;
+}
+.dj-mask.show { opacity: 1; pointer-events: auto; }
+
+.dj-sheet {
+    position: fixed; left: 50%; bottom: 0; z-index: 1301;
+    width: min(560px, 100%);
+    max-height: 74vh;
+    display: flex; flex-direction: column;
+    background: var(--bg-panel);
+    border: 1px solid var(--border); border-bottom: none;
+    border-radius: 18px 18px 0 0;
+    box-shadow: 0 -12px 32px rgba(0, 0, 0, .5);
+    transform: translate(-50%, 100%);
+    visibility: hidden;
+    transition: transform .2s ease, visibility .2s ease;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+}
+.dj-sheet.show { transform: translate(-50%, 0); visibility: visible; }
+
+.dj-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid var(--border);
+}
+.dj-head .dj-ic { color: var(--brand-soft); display: inline-flex; }
+.dj-head .dj-ic .ic { width: 17px; height: 17px; }
+.dj-title { flex: 1; font-size: 15px; font-weight: 600; color: var(--fg-1); }
+.dj-close {
+    width: 30px; height: 30px; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--btn); color: var(--fg-2);
+    border: none; border-radius: 50%; cursor: pointer;
+}
+.dj-close .ic { width: 14px; height: 14px; }
+.dj-close:active { transform: scale(.94); }
+
+.dj-tools {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+}
+.dj-input {
+    flex: 1; min-width: 132px;
+    background: var(--bg-field);
+    border: 1px solid var(--border-field);
+    border-radius: 10px;
+    color: var(--fg-1);
+    padding: 8px 10px;
+    font-size: 14px;
+    color-scheme: dark;
+}
+.dj-btn {
+    background: var(--btn); color: var(--fg-1);
+    border: 1px solid var(--border-field);
+    border-radius: 10px;
+    padding: 8px 12px;
+    font-size: 14px; white-space: nowrap; cursor: pointer;
+}
+.dj-btn:active { transform: scale(.97); }
+.dj-btn.brand {
+    background: linear-gradient(135deg, var(--brand-1-deep), var(--brand-deep));
+    border-color: transparent; color: #fff;
+}
+
+.dj-list { overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 6px 8px 16px; }
+.dj-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 11px 10px; border-radius: 10px;
+    color: var(--fg-2); font-size: 15px; cursor: pointer;
+}
+.dj-row:active { background: var(--bg-field); }
+.dj-d { font-variant-numeric: tabular-nums; }
+.dj-w { font-size: 12px; color: var(--fg-6); }
+.dj-tag {
+    margin-left: auto; font-size: 12px; color: var(--fg-6);
+    padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border-strong);
+}
+.dj-row.active { background: var(--brand-tint); color: var(--fg); }
+.dj-row.active .dj-w { color: var(--brand-soft); }
+.dj-row.active .dj-tag { color: var(--brand-soft); border-color: transparent; }
+.dj-empty { padding: 20px; text-align: center; color: var(--fg-6); font-size: 14px; }
+
+/* ---------- 单日模式：吸顶日期行右侧的「返回时间线」 ----------
+   不用悬浮条：窄屏（393px 实测）会跟状态行打架、文字还折成三行。 */
+.dj-back-inline {
+    margin-left: auto;
+    flex: none;
+    background: var(--brand-tint);
+    color: var(--brand-soft);
+    border: none;
+    border-radius: 999px;
+    padding: 4px 11px;
+    font-size: 12px;
+    line-height: 1.5;
+    cursor: pointer;
+    font-weight: 500;
+}
+.dj-back-inline:active { transform: scale(.96); }
+
+@media (max-width: 480px) {
+    .dj-sheet { max-height: 80vh; }
+    .dj-row { padding: 12px 10px; }
+    .date-header .dj-hint .ic { display: none; }   /* 窄屏只留小三角，省地方 */
+}
+
+```
+
+
+---
+
+## 文件：static/datejump.js
+
+```js
+/* ============================================================
+   按日期快速跳转 —— 交互层
+   · 点吸顶日期（.date-header）→ 底部面板：日期输入框 + 日期列表 → 只看某一天
+   · 单日模式由主页面管：模块只驱动 window.DateJumpBridge（见 index.html
+     「按日期快速跳转：状态与数据层」段），不重复维护 allMedia / allDates。
+   · 主页面通过 window.DateJumpUI.syncFocus(date) 通知单日模式开/关。
+   ============================================================ */
+(function () {
+    'use strict';
+
+    var WEEK = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+    var built = false, els = {}, openState = false, suppressUntil = 0, currentFocus = null;
+
+    function bridge() { return window.DateJumpBridge || null; }
+
+    function call(name, arg) {
+        var b = bridge();
+        if (b && typeof b[name] === 'function') return b[name](arg);
+        return null;
+    }
+
+    function icon(name) {
+        var b = bridge();
+        return (b && typeof b.icon === 'function') ? b.icon(name) : '';
+    }
+
+    function weekday(date) {
+        var t = Date.parse(date + 'T00:00:00');
+        return isNaN(t) ? '' : WEEK[new Date(t).getDay()];
+    }
+
+    function todayStr() {
+        var n = new Date();
+        var m = String(n.getMonth() + 1).padStart(2, '0');
+        var d = String(n.getDate()).padStart(2, '0');
+        return n.getFullYear() + '-' + m + '-' + d;
+    }
+
+    // ---------- DOM（懒创建，挂在 body 上） ----------
+    function build() {
+        if (built) return;
+
+        var mask = document.createElement('div');
+        mask.className = 'dj-mask';
+        mask.addEventListener('click', close);
+
+        var sheet = document.createElement('div');
+        sheet.className = 'dj-sheet';
+        sheet.setAttribute('role', 'dialog');
+        sheet.setAttribute('aria-modal', 'true');
+        sheet.setAttribute('aria-label', '按日期跳转');
+        sheet.innerHTML =
+            '<div class="dj-head">' +
+                '<span class="dj-ic">' + icon('calendar') + '</span>' +
+                '<span class="dj-title">按日期跳转</span>' +
+                '<button class="dj-close" type="button" aria-label="关闭">' + icon('x') + '</button>' +
+            '</div>' +
+            '<div class="dj-tools">' +
+                '<input class="dj-input" type="date" aria-label="选择日期">' +
+                '<button class="dj-btn dj-back" type="button">回到时间线</button>' +
+            '</div>' +
+            '<div class="dj-list"></div>';
+
+        document.body.appendChild(mask);
+        document.body.appendChild(sheet);
+
+        els = {
+            mask: mask,
+            sheet: sheet,
+            list: sheet.querySelector('.dj-list'),
+            input: sheet.querySelector('.dj-input'),
+            back: sheet.querySelector('.dj-back'),
+            close: sheet.querySelector('.dj-close')
+        };
+
+        els.close.addEventListener('click', close);
+        els.back.addEventListener('click', function () { leaveFocus(); });
+        els.input.addEventListener('change', function () {
+            if (els.input.value) jump(els.input.value);
+        });
+        els.list.addEventListener('click', function (e) {
+            var row = e.target && e.target.closest ? e.target.closest('.dj-row') : null;
+            if (row && row.dataset.date) jump(row.dataset.date);
+        });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && openState) close();
+        });
+
+        built = true;
+    }
+
+    // ---------- 日期列表 ----------
+    function renderList() {
+        if (!built) return;
+        var dates = call('dates') || [];
+        var focus = call('focusDate');
+        var today = todayStr();
+
+        if (!dates.length) {
+            els.list.innerHTML = '<div class="dj-empty">日期列表还没准备好，稍后再试</div>';
+            return;
+        }
+        var html = '';
+        for (var i = 0; i < dates.length; i++) {
+            var d = dates[i];
+            var tag = d === today ? '今天' : (d === focus ? '当前' : '');
+            html += '<div class="dj-row' + (d === focus ? ' active' : '') + '" data-date="' + d + '">' +
+                '<span class="dj-d">' + d + '</span>' +
+                '<span class="dj-w">' + weekday(d) + '</span>' +
+                (tag ? '<span class="dj-tag">' + tag + '</span>' : '') +
+                '</div>';
+        }
+        els.list.innerHTML = html;
+    }
+
+    function scrollActiveIntoView(fallbackDate) {
+        var el = els.list.querySelector('.dj-row.active') ||
+            (fallbackDate ? els.list.querySelector('.dj-row[data-date="' + fallbackDate + '"]') : null);
+        if (el && el.scrollIntoView) el.scrollIntoView({ block: 'center' });
+    }
+
+    // ---------- 打开 / 关闭 ----------
+    function open(fromDate) {
+        build();
+        var focus = call('focusDate');
+        els.back.style.display = focus ? '' : 'none';
+        els.input.value = focus || fromDate || '';
+        renderList();
+        els.mask.classList.add('show');
+        els.sheet.classList.add('show');
+        openState = true;
+        // 面板动画结束后再滚动，否则 scrollIntoView 在隐藏容器里量不到位置
+        setTimeout(function () { scrollActiveIntoView(fromDate); }, 60);
+    }
+
+    function close() {
+        if (!built) return;
+        openState = false;
+        els.mask.classList.remove('show');
+        els.sheet.classList.remove('show');
+    }
+
+    async function jump(date) {
+        close();
+        // 短抑制窗口：连点/双击时第二次点击不再把面板弹回来
+        suppressUntil = Date.now() + 400;
+        await call('focus', date);
+    }
+
+    async function leaveFocus() {
+        close();
+        suppressUntil = Date.now() + 400;
+        await call('clear');
+    }
+
+    // ---------- 单日模式开关：主页面回调用 ----------
+    // 不用悬浮条（窄屏会和状态行打架）：直接把「返回时间线」做成吸顶日期
+    // 行右侧的一个小胶囊，跟着吸顶行一起走。
+    function syncFocus(date) {
+        build();
+        currentFocus = date || null;
+        var olds = document.querySelectorAll('.dj-back-inline');
+        for (var i = 0; i < olds.length; i++) olds[i].parentNode.removeChild(olds[i]);
+        els.back.style.display = currentFocus ? '' : 'none';
+        if (currentFocus) els.input.value = currentFocus;
+        markHeaders(document);          // 需要时把胶囊加回去
+        if (openState) renderList();
+    }
+
+    // ---------- 吸顶日期：加可点提示（+ 单日模式下的返回胶囊） ----------
+    function markHeaders(root) {
+        var scope = root || document;
+        var headers = scope.querySelectorAll('.date-header');
+        for (var i = 0; i < headers.length; i++) {
+            var h = headers[i];
+            var first = h.firstChild;
+            var text = (first && first.nodeType === 3 ? first.nodeValue : h.textContent) || '';
+            var date = text.trim().slice(0, 10);
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+            h.dataset.djDate = date;
+
+            if (!h.querySelector('.dj-hint')) {
+                var hint = document.createElement('span');
+                hint.className = 'dj-hint';
+                hint.innerHTML = icon('calendar') + '<i></i>';
+                h.appendChild(hint);
+            }
+            // 单日模式：只有被聚焦的那一天挂「返回时间线」
+            if (currentFocus && date === currentFocus && !h.querySelector('.dj-back-inline')) {
+                var back = document.createElement('button');
+                back.type = 'button';
+                back.className = 'dj-back-inline';
+                back.textContent = '返回时间线';
+                back.addEventListener('click', function (ev) {
+                    ev.stopPropagation();
+                    leaveFocus();
+                });
+                h.appendChild(back);
+            }
+        }
+    }
+
+    function observeContent() {
+        var content = document.getElementById('content');
+        if (!content) return;
+        var pending = false;
+        var obs = new MutationObserver(function () {
+            if (pending) return;
+            pending = true;
+            requestAnimationFrame(function () {
+                pending = false;
+                markHeaders(content);     // 幂等：已有提示的跳过，不会自激
+                if (openState) renderList();
+            });
+        });
+        obs.observe(content, { childList: true, subtree: true });
+        markHeaders(content);
+    }
+
+    document.addEventListener('click', function (e) {
+        if (openState) return;                       // 面板已开，交给面板自己处理
+        if (Date.now() < suppressUntil) return;      // 刚选完日期，忽略同一次连点的余波
+        var h = e.target && e.target.closest ? e.target.closest('.date-header') : null;
+        if (!h) return;
+        var b = bridge();
+        if (!b || (typeof b.isSelectMode === 'function' && b.isSelectMode())) return;
+        if (e.target.closest('.select-hint')) return;
+        open(h.dataset.djDate);
+    }, true);
+
+    function init() {
+        build();
+        observeContent();
+        syncFocus(call('focusDate'));
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+
+    // 给主页面用（单日模式开关时同步返回条 / 面板）
+    window.DateJumpUI = { syncFocus: syncFocus, open: open, close: close };
+})();
+
+```
+
+
+---
+
 ## 文件：static/icon.svg
 
 ```text
@@ -8072,6 +8502,8 @@ func TestRenderThumbAtomicRealVideo(t *testing.T) {
     <meta name="apple-mobile-web-app-title" content="媒体浏览器">
     <link rel="manifest" href="/static/manifest.json">
     <link rel="icon" href="/static/icon.svg">
+    <!-- 按日期快速跳转（功能独立成对文件，见 static/datejump.js|css） -->
+    <link rel="stylesheet" href="/static/datejump.css">
     <title>媒体浏览器</title>
     <style>
         /* ================= 设计变量 =================
@@ -9063,6 +9495,7 @@ func TestRenderThumbAtomicRealVideo(t *testing.T) {
             minimize: '<path d="M9.5 4v3.5a2 2 0 0 1-2 2H4"/><path d="M20 9.5h-3.5a2 2 0 0 1-2-2V4"/><path d="M14.5 20v-3.5a2 2 0 0 1 2-2H20"/><path d="M4 14.5h3.5a2 2 0 0 1 2 2V20"/>',
             list: '<path d="M4 7h16M4 12h16M4 17h16"/>',
             alert: '<path d="M12 4.2L21 19.8H3z"/><path d="M12 10v4.2"/><path d="M12 17.2h.01"/>',
+            calendar: '<rect x="4" y="5.6" width="16" height="14.4" rx="2.4"/><path d="M4 10.2h16"/><path d="M8.6 3.6v3.6M15.4 3.6v3.6"/><path d="M8.4 14.2h2M13.6 14.2h2"/>',
         };
         function ic(name, solo) {
             const p = ICON_PATHS[name] || '';
@@ -9260,6 +9693,63 @@ func TestRenderThumbAtomicRealVideo(t *testing.T) {
             }
             else filteredMedia = allMedia.filter(m => m.isVideo);
         }
+
+        // ===== 按日期快速跳转：状态与数据层（UI 在 static/datejump.js）=====
+        // 一个功能一套文件：这里只保留「列表状态 + 抓取」，面板与交互全在
+        // datejump.css / datejump.js 里，改外观不用碰主文件。
+        // 单日模式：列表里只装这一天的文件、不再向前加载其它日期；
+        // 筛选按钮（照片/视频/影视）仍在该天内筛选。
+        let focusDate = null;
+
+        async function focusSingleDate(date) {
+            const gen = ++mediaGen;      // 作废在途分页（与 reloadMedia 同一种代际保护）
+            loadingMore = false;
+            allDatesLoaded = true;       // 单日模式：禁止继续加载往前的日期
+            allMedia = []; filteredMedia = []; currentIndex = 0;
+            selectMode = false; selectedFiles.clear(); updateActionButtons();
+            focusDate = date;
+            try {
+                let p = 1, hasMore = true;
+                while (hasMore) {
+                    if (gen !== mediaGen) return;
+                    const r = await fetch('/api/files/' + encodeURIComponent(date) + '?page=' + p);
+                    const d = await r.json();
+                    if (gen !== mediaGen) return;
+                    (d.files || []).forEach(f => allMedia.push({ ...f, date }));
+                    hasMore = p < (d.pages || 1);
+                    p++;
+                }
+                filterMedia(); render();
+                window.scrollTo(0, 0);
+            } catch (e) {
+                console.error('按日期跳转失败:', e);
+            }
+            syncDateJumpUI();
+        }
+
+        async function clearFocusDate() {
+            focusDate = null;
+            syncDateJumpUI();
+            await reloadMedia();       // 回到默认的最新时间线
+        }
+
+        // 单日模式开关时通知模块（模块可能还没加载，做一次判空）
+        function syncDateJumpUI() {
+            if (window.DateJumpUI && typeof window.DateJumpUI.syncFocus === 'function') {
+                window.DateJumpUI.syncFocus(focusDate);
+            }
+        }
+
+        // 模块的唯一入口：日期列表、跳转、返回、图标都从这里取，
+        // 避免两处各存一份状态（状态只在主页面这一份）。
+        window.DateJumpBridge = {
+            dates: () => allDates.slice(),
+            focusDate: () => focusDate,
+            isSelectMode: () => selectMode,
+            icon: (name) => ic(name),
+            focus: (date) => focusSingleDate(date),
+            clear: () => clearFocusDate(),
+        };
         
         // ── 日期分区「离屏回收」（第三阶段优化）──────────────────────
         // 全量渲染时 16882 个格子常驻 DOM（十几万节点），内存与每次操作都偏重。
@@ -9449,9 +9939,13 @@ func TestRenderThumbAtomicRealVideo(t *testing.T) {
 
         function render() {
             if (filteredMedia.length === 0) {
-                document.getElementById('content').innerHTML = '<div class="empty-tip">' + (currentFilter === 'movie'
-                    ? ic('video') + '暂无时长超过 ' + movieMinMinutes() + ' 分钟的视频'
-                    : '暂无内容') + '</div>';
+                // 单日模式下空结果要说明白：是这天真没有，还是被筛选挡住了
+                const tip = focusDate
+                    ? ('只看 ' + focusDate + '：这天没有符合当前筛选的内容（换个筛选，或点上方返回时间线）')
+                    : (currentFilter === 'movie'
+                        ? ic('video') + '暂无时长超过 ' + movieMinMinutes() + ' 分钟的视频'
+                        : '暂无内容');
+                document.getElementById('content').innerHTML = '<div class="empty-tip">' + tip + '</div>';
                 return;
             }
             let html = '', currentDate = '', dateCount = 0;
@@ -11307,6 +11801,8 @@ func TestRenderThumbAtomicRealVideo(t *testing.T) {
             })();
         })();
     </script>
+    <!-- 按日期快速跳转交互层（配套样式在 <head> 引入） -->
+    <script src="/static/datejump.js"></script>
 
 
 </body></html>
@@ -11531,7 +12027,7 @@ if (Test-Path $cliSrc) {
 } else {
     Say '   !! dist\tg_downloader_cli.exe missing - QR/login/channels fall back to python + script'
 }
-foreach ($f in 'index.html', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png') {
+foreach ($f in 'index.html', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png', 'datejump.js', 'datejump.css') {
     $src = Join-Path $repo ("static\" + $f)
     if (Test-Path $src) {
         Copy-Item $src (Join-Path $station ("static\" + $f)) -Force

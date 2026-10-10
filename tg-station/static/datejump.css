@@ -1,0 +1,143 @@
+/* ============================================================
+   按日期快速跳转 —— 样式
+   点吸顶日期 → 底部面板（日期输入 + 日期列表）→ 只看某一天。
+   交互与 DOM 在 static/datejump.js；这里只管外观。
+   颜色一律取自 index.html 的设计变量，不新增硬编码色值。
+   ============================================================ */
+
+/* 吸顶日期可点：小手光标 + 右侧「日历图标 + 小三角」提示 */
+.date-header {
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.date-header .dj-hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    color: var(--fg-6);
+    flex: none;
+}
+.date-header .dj-hint .ic { width: 1em; height: 1em; vertical-align: -0.1em; }
+/* 小三角也画出来（不用文字字形，遵守 Drawn-Never-Typed） */
+.date-header .dj-hint i {
+    width: 0; height: 0; display: inline-block;
+    border-left: 4.5px solid transparent;
+    border-right: 4.5px solid transparent;
+    border-top: 5px solid currentColor;
+    transition: transform .15s ease;
+}
+.date-header:active .dj-hint { color: var(--brand-soft); }
+.date-header:active .dj-hint i { transform: translateY(1px); }
+/* 选择模式下日期行里放的是「已选 N 个」，不给跳转暗示 */
+.date-header:has(.select-hint) .dj-hint { display: none; }
+
+/* ---------- 遮罩与面板（移动端底部抽屉） ---------- */
+.dj-mask {
+    position: fixed; inset: 0; z-index: 1300;
+    background: var(--overlay-modal);
+    opacity: 0; pointer-events: none;
+    transition: opacity .18s ease;
+}
+.dj-mask.show { opacity: 1; pointer-events: auto; }
+
+.dj-sheet {
+    position: fixed; left: 50%; bottom: 0; z-index: 1301;
+    width: min(560px, 100%);
+    max-height: 74vh;
+    display: flex; flex-direction: column;
+    background: var(--bg-panel);
+    border: 1px solid var(--border); border-bottom: none;
+    border-radius: 18px 18px 0 0;
+    box-shadow: 0 -12px 32px rgba(0, 0, 0, .5);
+    transform: translate(-50%, 100%);
+    visibility: hidden;
+    transition: transform .2s ease, visibility .2s ease;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+}
+.dj-sheet.show { transform: translate(-50%, 0); visibility: visible; }
+
+.dj-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid var(--border);
+}
+.dj-head .dj-ic { color: var(--brand-soft); display: inline-flex; }
+.dj-head .dj-ic .ic { width: 17px; height: 17px; }
+.dj-title { flex: 1; font-size: 15px; font-weight: 600; color: var(--fg-1); }
+.dj-close {
+    width: 30px; height: 30px; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--btn); color: var(--fg-2);
+    border: none; border-radius: 50%; cursor: pointer;
+}
+.dj-close .ic { width: 14px; height: 14px; }
+.dj-close:active { transform: scale(.94); }
+
+.dj-tools {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+}
+.dj-input {
+    flex: 1; min-width: 132px;
+    background: var(--bg-field);
+    border: 1px solid var(--border-field);
+    border-radius: 10px;
+    color: var(--fg-1);
+    padding: 8px 10px;
+    font-size: 14px;
+    color-scheme: dark;
+}
+.dj-btn {
+    background: var(--btn); color: var(--fg-1);
+    border: 1px solid var(--border-field);
+    border-radius: 10px;
+    padding: 8px 12px;
+    font-size: 14px; white-space: nowrap; cursor: pointer;
+}
+.dj-btn:active { transform: scale(.97); }
+.dj-btn.brand {
+    background: linear-gradient(135deg, var(--brand-1-deep), var(--brand-deep));
+    border-color: transparent; color: #fff;
+}
+
+.dj-list { overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 6px 8px 16px; }
+.dj-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 11px 10px; border-radius: 10px;
+    color: var(--fg-2); font-size: 15px; cursor: pointer;
+}
+.dj-row:active { background: var(--bg-field); }
+.dj-d { font-variant-numeric: tabular-nums; }
+.dj-w { font-size: 12px; color: var(--fg-6); }
+.dj-tag {
+    margin-left: auto; font-size: 12px; color: var(--fg-6);
+    padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border-strong);
+}
+.dj-row.active { background: var(--brand-tint); color: var(--fg); }
+.dj-row.active .dj-w { color: var(--brand-soft); }
+.dj-row.active .dj-tag { color: var(--brand-soft); border-color: transparent; }
+.dj-empty { padding: 20px; text-align: center; color: var(--fg-6); font-size: 14px; }
+
+/* ---------- 单日模式：吸顶日期行右侧的「返回时间线」 ----------
+   不用悬浮条：窄屏（393px 实测）会跟状态行打架、文字还折成三行。 */
+.dj-back-inline {
+    margin-left: auto;
+    flex: none;
+    background: var(--brand-tint);
+    color: var(--brand-soft);
+    border: none;
+    border-radius: 999px;
+    padding: 4px 11px;
+    font-size: 12px;
+    line-height: 1.5;
+    cursor: pointer;
+    font-weight: 500;
+}
+.dj-back-inline:active { transform: scale(.96); }
+
+@media (max-width: 480px) {
+    .dj-sheet { max-height: 80vh; }
+    .dj-row { padding: 12px 10px; }
+    .date-header .dj-hint .ic { display: none; }   /* 窄屏只留小三角，省地方 */
+}

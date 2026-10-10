@@ -9,6 +9,8 @@
     <meta name="apple-mobile-web-app-title" content="媒体浏览器">
     <link rel="manifest" href="/static/manifest.json">
     <link rel="icon" href="/static/icon.svg">
+    <!-- 按日期快速跳转（功能独立成对文件，见 static/datejump.js|css） -->
+    <link rel="stylesheet" href="/static/datejump.css">
     <title>媒体浏览器</title>
     <style>
         /* ================= 设计变量 =================
@@ -1000,6 +1002,7 @@
             minimize: '<path d="M9.5 4v3.5a2 2 0 0 1-2 2H4"/><path d="M20 9.5h-3.5a2 2 0 0 1-2-2V4"/><path d="M14.5 20v-3.5a2 2 0 0 1 2-2H20"/><path d="M4 14.5h3.5a2 2 0 0 1 2 2V20"/>',
             list: '<path d="M4 7h16M4 12h16M4 17h16"/>',
             alert: '<path d="M12 4.2L21 19.8H3z"/><path d="M12 10v4.2"/><path d="M12 17.2h.01"/>',
+            calendar: '<rect x="4" y="5.6" width="16" height="14.4" rx="2.4"/><path d="M4 10.2h16"/><path d="M8.6 3.6v3.6M15.4 3.6v3.6"/><path d="M8.4 14.2h2M13.6 14.2h2"/>',
         };
         function ic(name, solo) {
             const p = ICON_PATHS[name] || '';
@@ -1197,6 +1200,63 @@
             }
             else filteredMedia = allMedia.filter(m => m.isVideo);
         }
+
+        // ===== 按日期快速跳转：状态与数据层（UI 在 static/datejump.js）=====
+        // 一个功能一套文件：这里只保留「列表状态 + 抓取」，面板与交互全在
+        // datejump.css / datejump.js 里，改外观不用碰主文件。
+        // 单日模式：列表里只装这一天的文件、不再向前加载其它日期；
+        // 筛选按钮（照片/视频/影视）仍在该天内筛选。
+        let focusDate = null;
+
+        async function focusSingleDate(date) {
+            const gen = ++mediaGen;      // 作废在途分页（与 reloadMedia 同一种代际保护）
+            loadingMore = false;
+            allDatesLoaded = true;       // 单日模式：禁止继续加载往前的日期
+            allMedia = []; filteredMedia = []; currentIndex = 0;
+            selectMode = false; selectedFiles.clear(); updateActionButtons();
+            focusDate = date;
+            try {
+                let p = 1, hasMore = true;
+                while (hasMore) {
+                    if (gen !== mediaGen) return;
+                    const r = await fetch('/api/files/' + encodeURIComponent(date) + '?page=' + p);
+                    const d = await r.json();
+                    if (gen !== mediaGen) return;
+                    (d.files || []).forEach(f => allMedia.push({ ...f, date }));
+                    hasMore = p < (d.pages || 1);
+                    p++;
+                }
+                filterMedia(); render();
+                window.scrollTo(0, 0);
+            } catch (e) {
+                console.error('按日期跳转失败:', e);
+            }
+            syncDateJumpUI();
+        }
+
+        async function clearFocusDate() {
+            focusDate = null;
+            syncDateJumpUI();
+            await reloadMedia();       // 回到默认的最新时间线
+        }
+
+        // 单日模式开关时通知模块（模块可能还没加载，做一次判空）
+        function syncDateJumpUI() {
+            if (window.DateJumpUI && typeof window.DateJumpUI.syncFocus === 'function') {
+                window.DateJumpUI.syncFocus(focusDate);
+            }
+        }
+
+        // 模块的唯一入口：日期列表、跳转、返回、图标都从这里取，
+        // 避免两处各存一份状态（状态只在主页面这一份）。
+        window.DateJumpBridge = {
+            dates: () => allDates.slice(),
+            focusDate: () => focusDate,
+            isSelectMode: () => selectMode,
+            icon: (name) => ic(name),
+            focus: (date) => focusSingleDate(date),
+            clear: () => clearFocusDate(),
+        };
         
         // ── 日期分区「离屏回收」（第三阶段优化）──────────────────────
         // 全量渲染时 16882 个格子常驻 DOM（十几万节点），内存与每次操作都偏重。
@@ -1386,9 +1446,13 @@
 
         function render() {
             if (filteredMedia.length === 0) {
-                document.getElementById('content').innerHTML = '<div class="empty-tip">' + (currentFilter === 'movie'
-                    ? ic('video') + '暂无时长超过 ' + movieMinMinutes() + ' 分钟的视频'
-                    : '暂无内容') + '</div>';
+                // 单日模式下空结果要说明白：是这天真没有，还是被筛选挡住了
+                const tip = focusDate
+                    ? ('只看 ' + focusDate + '：这天没有符合当前筛选的内容（换个筛选，或点上方返回时间线）')
+                    : (currentFilter === 'movie'
+                        ? ic('video') + '暂无时长超过 ' + movieMinMinutes() + ' 分钟的视频'
+                        : '暂无内容');
+                document.getElementById('content').innerHTML = '<div class="empty-tip">' + tip + '</div>';
                 return;
             }
             let html = '', currentDate = '', dateCount = 0;
@@ -3244,6 +3308,8 @@
             })();
         })();
     </script>
+    <!-- 按日期快速跳转交互层（配套样式在 <head> 引入） -->
+    <script src="/static/datejump.js"></script>
 
 
 </body></html>
